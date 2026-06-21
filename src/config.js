@@ -12,7 +12,10 @@ module.exports = {
   port: Number(process.env.PORT) || 3000,
   nodeEnv: process.env.NODE_ENV || 'development',
   adminNumber: process.env.ADMIN_WHATSAPP_NUMBER || '',
-  publicBaseUrl: (process.env.PUBLIC_BASE_URL || '').trim(),
+  publicBaseUrl: (
+    process.env.PUBLIC_BASE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
+  ).trim(),
 
   whatsapp: {
     token: (process.env.WHATSAPP_ACCESS_TOKEN || '').trim(),
