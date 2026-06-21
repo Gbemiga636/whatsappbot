@@ -1,0 +1,53 @@
+{
+  "version": "7.0",
+  "routing_model": {
+    "VERIFY_PIN": []
+  },
+  "screens": [
+    {
+      "id": "VERIFY_PIN",
+      "title": "Authorize payment",
+      "terminal": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "verify_pin_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Confirm purchase"
+              },
+              {
+                "type": "TextBody",
+                "text": "Enter your transaction PIN. Masked and secure."
+              },
+              {
+                "type": "TextInput",
+                "name": "pin",
+                "label": "Transaction PIN",
+                "input-type": "passcode",
+                "required": true,
+                "min-chars": 4,
+                "max-chars": 4
+              },
+              {
+                "type": "Footer",
+                "label": "Authorize",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "action": "verify",
+                    "pin": "${form.pin}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

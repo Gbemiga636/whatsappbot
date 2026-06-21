@@ -1,0 +1,92 @@
+{
+  "version": "7.0",
+  "routing_model": {
+    "SIGNUP": []
+  },
+  "screens": [
+    {
+      "id": "SIGNUP",
+      "title": "Mysogi Sign Up",
+      "terminal": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "signup_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Create Mysogi account"
+              },
+              {
+                "type": "TextBody",
+                "text": "Same account as mysogi.com.ng. Password is private and never appears in chat."
+              },
+              {
+                "type": "TextInput",
+                "name": "firstName",
+                "label": "First name",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "lastName",
+                "label": "Last name",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "email",
+                "label": "Email",
+                "input-type": "email",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "password",
+                "label": "Password (min 6 chars)",
+                "input-type": "password",
+                "required": true,
+                "min-chars": 6
+              },
+              {
+                "type": "Dropdown",
+                "name": "userType",
+                "label": "Account type",
+                "required": true,
+                "data-source": [
+                  { "id": "individual", "title": "Individual" },
+                  { "id": "business", "title": "Business" }
+                ]
+              },
+              {
+                "type": "TextInput",
+                "name": "businessName",
+                "label": "Business name (if business)",
+                "required": false
+              },
+              {
+                "type": "Footer",
+                "label": "Create account",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "action": "signup",
+                    "firstName": "${form.firstName}",
+                    "lastName": "${form.lastName}",
+                    "email": "${form.email}",
+                    "password": "${form.password}",
+                    "userType": "${form.userType}",
+                    "businessName": "${form.businessName}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "version": "7.0",
+  "routing_model": {
+    "SET_PIN": ["CONFIRM_PIN"],
+    "CONFIRM_PIN": []
+  },
+  "screens": [
+    {
+      "id": "SET_PIN",
+      "title": "Create PIN",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "set_pin_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Transaction PIN"
+              },
+              {
+                "type": "TextBody",
+                "text": "Create a 4-digit PIN. It is masked and encrypted — never shown in chat."
+              },
+              {
+                "type": "TextInput",
+                "name": "pin",
+                "label": "4-digit PIN",
+                "input-type": "passcode",
+                "required": true,
+                "min-chars": 4,
+                "max-chars": 4
+              },
+              {
+                "type": "Footer",
+                "label": "Continue",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": {
+                    "type": "screen",
+                    "name": "CONFIRM_PIN"
+                  },
+                  "payload": {
+                    "pin_draft": "${form.pin}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "CONFIRM_PIN",
+      "title": "Confirm PIN",
+      "terminal": true,
+      "data": {
+        "pin_draft": {
+          "type": "number",
+          "__example__": 1234
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "confirm_pin_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Confirm PIN"
+              },
+              {
+                "type": "TextBody",
+                "text": "Re-enter your PIN to confirm."
+              },
+              {
+                "type": "TextInput",
+                "name": "pin_confirm",
+                "label": "Confirm PIN",
+                "input-type": "passcode",
+                "required": true,
+                "min-chars": 4,
+                "max-chars": 4
+              },
+              {
+                "type": "Footer",
+                "label": "Save PIN",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "action": "set",
+                    "pin": "${form.pin_confirm}",
+                    "pin_draft": "${data.pin_draft}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

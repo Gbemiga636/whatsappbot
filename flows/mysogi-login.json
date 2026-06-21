@@ -1,0 +1,59 @@
+{
+  "version": "7.0",
+  "routing_model": {
+    "LOGIN": []
+  },
+  "screens": [
+    {
+      "id": "LOGIN",
+      "title": "Mysogi Login",
+      "terminal": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "login_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Sign in to Mysogi"
+              },
+              {
+                "type": "TextBody",
+                "text": "Your password is entered securely and is not saved in the chat."
+              },
+              {
+                "type": "TextInput",
+                "name": "email",
+                "label": "Email",
+                "input-type": "email",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "password",
+                "label": "Password",
+                "input-type": "password",
+                "required": true
+              },
+              {
+                "type": "Footer",
+                "label": "Login",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "action": "login",
+                    "email": "${form.email}",
+                    "password": "${form.password}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
