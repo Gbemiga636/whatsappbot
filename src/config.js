@@ -14,6 +14,8 @@ module.exports = {
   adminNumber: process.env.ADMIN_WHATSAPP_NUMBER || '',
   publicBaseUrl: (
     process.env.PUBLIC_BASE_URL ||
+    process.env.URL ||
+    process.env.DEPLOY_PRIME_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
   ).trim(),
 

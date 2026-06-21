@@ -2,34 +2,21 @@
  * Hybrid session store — sync API for flows, async Supabase/JSON persistence.
  */
 
-const fs = require('fs');
-const path = require('path');
+const { dataFile, safeReadJson, safeWriteJson } = require('./core/dataDir');
 const { getSupabase } = require('./db/supabase');
 const logger = require('./core/logger');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
+const SESSIONS_FILE = dataFile('sessions.json');
 const SESSION_TTL_HOURS = 24;
 
 const cache = new Map();
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
 function loadLocal() {
-  ensureDataDir();
-  if (!fs.existsSync(SESSIONS_FILE)) return {};
-  try {
-    return JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
-  } catch {
-    return {};
-  }
+  return safeReadJson(SESSIONS_FILE, {});
 }
 
 function saveLocal(sessions) {
-  ensureDataDir();
-  fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessions, null, 2));
+  safeWriteJson(SESSIONS_FILE, sessions);
 }
 
 function normalize(raw) {
@@ -43,9 +30,13 @@ function normalize(raw) {
 }
 
 function hydrateCache() {
-  const local = loadLocal();
-  for (const [phone, session] of Object.entries(local)) {
-    if (!cache.has(phone)) cache.set(phone, normalize(session));
+  try {
+    const local = loadLocal();
+    for (const [phone, session] of Object.entries(local)) {
+      if (!cache.has(phone)) cache.set(phone, normalize(session));
+    }
+  } catch {
+    /* serverless — rely on Supabase */
   }
 }
 

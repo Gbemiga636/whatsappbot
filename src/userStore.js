@@ -2,35 +2,29 @@
  * Hybrid user store — sync API for flows, async Supabase/JSON persistence.
  */
 
-const fs = require('fs');
-const path = require('path');
+const { dataFile, safeReadJson, safeWriteJson } = require('./core/dataDir');
 const { getSupabase } = require('./db/supabase');
 const logger = require('./core/logger');
 
-const USERS_FILE = path.join(__dirname, '..', 'data', 'users.json');
+const USERS_FILE = dataFile('users.json');
 const cache = new Map();
 
 function loadLocal() {
-  const dir = path.dirname(USERS_FILE);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  if (!fs.existsSync(USERS_FILE)) return {};
-  try {
-    return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-  } catch {
-    return {};
-  }
+  return safeReadJson(USERS_FILE, {});
 }
 
 function saveLocal(users) {
-  const dir = path.dirname(USERS_FILE);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  safeWriteJson(USERS_FILE, users);
 }
 
 function hydrateCache() {
-  const local = loadLocal();
-  for (const [phone, user] of Object.entries(local)) {
-    if (!cache.has(phone)) cache.set(phone, user);
+  try {
+    const local = loadLocal();
+    for (const [phone, user] of Object.entries(local)) {
+      if (!cache.has(phone)) cache.set(phone, user);
+    }
+  } catch {
+    /* serverless — rely on Supabase */
   }
 }
 
