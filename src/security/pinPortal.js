@@ -77,15 +77,15 @@ async function sendPortalLink(phone, { purpose, pendingPurchase, cta, message })
 
 async function promptSetPin(phone, { pendingPurchase } = {}) {
   const note = pendingPurchase
-    ? 'After setting your PIN, your purchase will continue automatically.'
-    : 'Required before wallet purchases and transfers.';
+    ? 'Set your PIN *once* — you will reuse the same PIN for future purchases.'
+    : 'Set once — you will reuse the same PIN for all wallet purchases.';
 
   return sendPortalLink(phone, {
     purpose: 'set',
     pendingPurchase,
     cta: 'Set PIN',
     message:
-      `🔐 *Set transaction PIN*\n\n${note}\n\nTap below to open the *secure PIN page*.`,
+      `🔐 *Set transaction PIN (one time)*\n\n${note}\n\nTap below to open the *secure PIN page*.`,
   });
 }
 
@@ -101,7 +101,8 @@ async function promptVerifyPin(phone, pendingPurchase) {
     pendingPurchase,
     cta: 'Authorize',
     message:
-      `🔐 *Authorize payment*\n\n${summary}${amount}\n\nTap below to confirm with your PIN on our secure page.`,
+      `🔐 *Confirm with your PIN*\n\n${summary}${amount}\n\n` +
+      `Enter your *existing* transaction PIN on the secure page (not a new one).`,
   });
 }
 

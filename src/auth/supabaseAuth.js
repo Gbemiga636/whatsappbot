@@ -20,6 +20,12 @@ async function linkWhatsAppProfile(phone, authUser, extra = {}) {
   if (!db) return { ok: false, message: 'Database not configured' };
 
   const meta = authUser.user_metadata || {};
+  const { data: existingRow } = await db
+    .from('whatsapp_users')
+    .select('metadata')
+    .eq('phone', phone)
+    .maybeSingle();
+
   const row = {
     phone,
     email: authUser.email,
@@ -29,6 +35,7 @@ async function linkWhatsAppProfile(phone, authUser, extra = {}) {
     supabase_user_id: authUser.id,
     mysogi_token: extra.mysogiToken || null,
     mysogi_user_id: extra.userId || null,
+    metadata: existingRow?.metadata || {},
     updated_at: new Date().toISOString(),
   };
 
@@ -53,6 +60,7 @@ async function linkWhatsAppProfile(phone, authUser, extra = {}) {
     userId: data.mysogi_user_id,
     walletBalance: data.wallet_balance,
     kycLevel: data.kyc_level,
+    metadata: data.metadata || {},
   });
 
   return { ok: true, user: data };
@@ -70,8 +78,14 @@ async function restoreUserByPhone(phone) {
 
   if (error || !data) return getUser(phone);
 
+  const patch = {
+    metadata: data.metadata || {},
+    walletBalance: data.wallet_balance,
+    kycLevel: data.kyc_level,
+  };
+
   if (data.auth_mode === 'authenticated' && data.email) {
-    setUser(phone, {
+    Object.assign(patch, {
       email: data.email,
       firstName: data.first_name,
       lastName: data.last_name,
@@ -79,10 +93,11 @@ async function restoreUserByPhone(phone) {
       supabaseUserId: data.supabase_user_id,
       mysogiToken: data.mysogi_token,
       userId: data.mysogi_user_id,
-      walletBalance: data.wallet_balance,
-      kycLevel: data.kyc_level,
     });
   }
+
+  const current = getUser(phone) || { phone };
+  setUser(phone, { ...current, ...patch });
 
   return getUser(phone);
 }

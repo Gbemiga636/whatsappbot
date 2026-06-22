@@ -63,13 +63,15 @@ async function savePinRecord(phone, record) {
 
   const db = getSupabase();
   if (db) {
-    db.from('whatsapp_users')
-      .update({ metadata, updated_at: new Date().toISOString() })
-      .eq('phone', normalized)
-      .then(({ error }) => {
-        if (error) logger.warn('Supabase savePinRecord failed', { phone: normalized, error: error.message });
-      })
-      .catch((err) => logger.warn('Supabase savePinRecord error', { phone: normalized, error: err.message }));
+    const { error } = await db.from('whatsapp_users').upsert(
+      {
+        phone: normalized,
+        metadata,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'phone' }
+    );
+    if (error) logger.warn('Supabase savePinRecord failed', { phone: normalized, error: error.message });
   }
 }
 
