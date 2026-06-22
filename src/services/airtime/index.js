@@ -190,13 +190,20 @@ class AirtimeService extends BaseService {
       if (purchase?.awaitingPin || purchase?.awaitingPinSetup || purchase?.locked) return;
 
       if (purchase.ok) {
+        const providerNote = purchase.result?.pendingWebhook
+          ? '\n_Airtime is being delivered shortly._'
+          : '';
         await this.reply(
           ctx.phone,
-          `✅ *${airtime.type} purchased!*\n\nRef: *${purchase.reference}*\n` +
+          `✅ *${airtime.type} purchased!*\n\n` +
+            `${purchase.result?.message ? `${purchase.result.message}\n\n` : ''}` +
+            `Ref: *${purchase.reference}*\n` +
             `Paid: ${wallet.formatNaira(purchase.total)} (fee: ${wallet.formatNaira(purchase.commission)})\n` +
-            `Balance: ${wallet.formatNaira(purchase.balance)}`
+            `Balance: ${wallet.formatNaira(purchase.balance)}` +
+            providerNote
         );
       }
+      await this.updateSession(ctx.phone, { step: this.STEPS.MENU, data: {} });
       return this.showMenu(ctx);
     }
 

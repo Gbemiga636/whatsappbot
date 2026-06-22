@@ -84,6 +84,24 @@ function endpoint(action) {
   return `${API_ROOT}/${action}/${key}`;
 }
 
+function extractProviderText(data) {
+  return String(data.response || data.message || data.msg || data.description || data.trueResponse || '');
+}
+
+/** Sabuss/ERight often returns code 800 + "processed successfully… sent to Webhook" for async OK orders */
+function isProviderSuccessText(text) {
+  const t = String(text).toLowerCase();
+  if (!t) return false;
+  if (/invalid|failed|error|insufficient|denied|rejected|wrong pin|not found/i.test(t)) return false;
+  return (
+    /processed successfully/i.test(t) ||
+    /successfully processed/i.test(t) ||
+    /transaction successful/i.test(t) ||
+    /order is processed/i.test(t) ||
+    (/sent to webhook/i.test(t) && /success/i.test(t))
+  );
+}
+
 function parseSabussResponse(data) {
   if (!data || typeof data !== 'object') {
     return { ok: false, message: 'Invalid response from ERight VTU', raw: data };
@@ -91,11 +109,32 @@ function parseSabussResponse(data) {
 
   const status = String(data.status ?? '').toLowerCase();
   const code = String(data.code ?? '');
+  const text = extractProviderText(data);
+
+  if (isProviderSuccessText(text)) {
+    const transactionId =
+      data.reference ||
+      data.ref ||
+      data.ourRef ||
+      data.transaction_id ||
+      data.transactionId ||
+      data.id ||
+      null;
+    const token = data.token || data.Token || data.purchased_code || null;
+    return {
+      ok: true,
+      message: text,
+      transactionId,
+      token,
+      raw: data,
+      pendingWebhook: /webhook/i.test(text),
+    };
+  }
 
   if (status === 'error' || code === '800' || code === '400' || code === '401') {
     return {
       ok: false,
-      message: data.response || data.message || data.msg || 'Transaction failed',
+      message: text || 'Transaction failed',
       raw: data,
     };
   }
@@ -106,15 +145,9 @@ function parseSabussResponse(data) {
     code === '201' ||
     code === '000' ||
     data.success === true ||
-    /success/i.test(String(data.message || data.msg || data.response || ''));
+    /success/i.test(text);
 
-  const message =
-    data.response ||
-    data.message ||
-    data.msg ||
-    data.description ||
-    data.trueResponse ||
-    (success ? 'TRANSACTION SUCCESSFUL' : 'Transaction failed');
+  const message = text || (success ? 'TRANSACTION SUCCESSFUL' : 'Transaction failed');
 
   const transactionId =
     data.reference ||

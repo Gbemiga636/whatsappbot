@@ -114,12 +114,12 @@ async function executePendingPurchase(phone, pending) {
   }
 
   if (method === 'credit') {
-    return _confirmAndPayWithCredit(phone, { service, baseAmount, summaryText, execute });
+    return _confirmAndPayWithCredit(phone, { service, baseAmount, summaryText, execute, notify: false });
   }
-  return _confirmAndPay(phone, { service, baseAmount, summaryText, execute });
+  return _confirmAndPay(phone, { service, baseAmount, summaryText, execute, notify: false });
 }
 
-async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute }) {
+async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute, notify = true }) {
   const pricing = wallet.formatWalletSummary(baseAmount);
 
   const purchase = await wallet.purchaseWithWallet(phone, {
@@ -139,16 +139,20 @@ async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute
         execute,
       });
     }
-    await whatsapp.sendText(
-      phone,
-      `*${summaryText}*\n\n${pricing.text}\n\nYour balance: ${wallet.formatNaira(purchase.balance)}\nShort by: ${wallet.formatNaira(purchase.shortfall)}`
-    );
+    if (notify) {
+      await whatsapp.sendText(
+        phone,
+        `*${summaryText}*\n\n${pricing.text}\n\nYour balance: ${wallet.formatNaira(purchase.balance)}\nShort by: ${wallet.formatNaira(purchase.shortfall)}`
+      );
+    }
     return sendTopUpPrompt(phone, purchase.shortfall, service);
   }
 
   if (!purchase.ok) {
-    const refundNote = purchase.refunded ? '\n\n_Your wallet was refunded automatically._' : '';
-    await whatsapp.sendText(phone, `❌ ${purchase.message || 'Payment failed'}${refundNote}`);
+    if (notify) {
+      const refundNote = purchase.refunded ? '\n\n_Your wallet was refunded automatically._' : '';
+      await whatsapp.sendText(phone, `❌ ${purchase.message || 'Payment failed'}${refundNote}`);
+    }
     return purchase;
   }
 
