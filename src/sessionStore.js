@@ -5,7 +5,7 @@
 const { dataFile, safeReadJson, safeWriteJson } = require('./core/dataDir');
 const { getSupabase } = require('./db/supabase');
 const logger = require('./core/logger');
-const wallet = require('./wallet/walletService');
+const { normalizePhone: normalizePhoneUtil } = require('./utils/phone');
 
 const SESSIONS_FILE = dataFile('sessions.json');
 const SESSION_TTL_HOURS = 24;
@@ -13,7 +13,7 @@ const SESSION_TTL_HOURS = 24;
 const cache = new Map();
 
 function phoneKey(phone) {
-  return wallet.normalizePhone(phone) || String(phone || '').replace(/\D/g, '');
+  return normalizePhoneUtil(phone);
 }
 
 function loadLocal() {

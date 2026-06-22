@@ -10,6 +10,7 @@ const config = require('../config');
 const logger = require('../core/logger');
 const { normalizeProviderResult, isProviderSuccessMessage } = require('../utils/providerSuccess');
 const { withWalletLock } = require('./walletLock');
+const phoneUtil = require('../utils/phone');
 
 function generateRef(prefix = 'WLT') {
   return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
@@ -287,17 +288,11 @@ function formatNaira(amount) {
 }
 
 function normalizePhone(phone) {
-  const digits = String(phone).replace(/\D/g, '');
-  if (!digits) return '';
-  if (digits.startsWith('234')) return digits;
-  if (digits.startsWith('0')) return `234${digits.slice(1)}`;
-  if (digits.length === 10) return `234${digits}`;
-  return digits;
+  return phoneUtil.normalizePhone(phone);
 }
 
 function formatPhoneDisplay(phone) {
-  const p = normalizePhone(phone);
-  return p ? `+${p}` : phone;
+  return phoneUtil.formatPhoneDisplay(phone);
 }
 
 async function ensureWalletUser(phone) {

@@ -23,11 +23,7 @@ const supabaseFlow = require('../flows/supabaseAuthFlow');
 const { isSupabaseReady } = require('../auth/supabaseAuth');
 const { handleCreditAction, handleCreditCommand, isCreditChoice } = require('../credit/creditHandler');
 const pinPortal = require('../security/pinPortal');
-const wallet = require('../wallet/walletService');
-
-function normalizePhone(phone) {
-  return wallet.normalizePhone(phone) || String(phone || '').replace(/\D/g, '');
-}
+const { normalizePhone } = require('../utils/phone');
 
 const GREETINGS = new Set([
   'menu', 'start', 'hi', 'hello', 'help', '0', 'home', 'hey', 'hiya', 'howdy',

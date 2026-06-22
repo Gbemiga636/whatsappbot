@@ -9,7 +9,7 @@ const { showSuperAppMenu } = require('./superAppMenu');
 const { isSupabaseReady, signOut, restoreUserByPhone } = require('../auth/supabaseAuth');
 const supabaseFlow = require('../flows/supabaseAuthFlow');
 const legacyFlow = require('../flows/authFlow');
-const wallet = require('../wallet/walletService');
+const { normalizePhone } = require('../utils/phone');
 
 const AUTH_STEPS = new Set([
   'auth_welcome',
@@ -23,10 +23,6 @@ const AUTH_STEPS = new Set([
 
 function useSupabaseAuth() {
   return isSupabaseReady();
-}
-
-function normalizePhone(phone) {
-  return wallet.normalizePhone(phone) || String(phone || '').replace(/\D/g, '');
 }
 
 async function applyAuthStepResult(phone, next) {

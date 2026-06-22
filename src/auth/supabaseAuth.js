@@ -6,14 +6,10 @@ const { getSupabase, isSupabaseReady } = require('../db/supabase');
 const { setUser, getUser } = require('../userStore');
 const logger = require('../core/logger');
 const config = require('../config');
-const wallet = require('../wallet/walletService');
+const { normalizePhone, formatPhoneDisplay } = require('../utils/phone');
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((email || '').trim());
-}
-
-function normalizePhone(phone) {
-  return wallet.normalizePhone(phone) || String(phone || '').replace(/\D/g, '');
 }
 
 function formatPhone(phone) {
