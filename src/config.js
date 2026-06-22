@@ -1,5 +1,26 @@
 require('dotenv').config();
 
+/** Fix copy-paste mistakes like WHATSAPP_PHONE_NUMBER_ID=WHATSAPP_PHONE_NUMBER_ID=123 */
+function sanitizeEnvValue(raw) {
+  let v = String(raw || '').trim();
+  if (!v) return '';
+  if (v.includes('=')) v = v.split('=').pop().trim();
+  return v;
+}
+
+function sanitizePhoneNumberId(raw) {
+  return sanitizeEnvValue(raw).replace(/\D/g, '');
+}
+
+const rawPhoneNumberId = (process.env.WHATSAPP_PHONE_NUMBER_ID || '').trim();
+const phoneNumberId = sanitizePhoneNumberId(rawPhoneNumberId);
+if (rawPhoneNumberId && rawPhoneNumberId !== phoneNumberId) {
+  console.warn(
+    'WHATSAPP_PHONE_NUMBER_ID looked malformed; using sanitized value:',
+    phoneNumberId
+  );
+}
+
 const required = ['WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_VERIFY_TOKEN'];
 
 for (const key of required) {
@@ -20,9 +41,9 @@ module.exports = {
   ).trim(),
 
   whatsapp: {
-    token: (process.env.WHATSAPP_ACCESS_TOKEN || '').trim(),
-    phoneNumberId: (process.env.WHATSAPP_PHONE_NUMBER_ID || '').trim(),
-    verifyToken: (process.env.WHATSAPP_VERIFY_TOKEN || '').trim(),
+    token: sanitizeEnvValue(process.env.WHATSAPP_ACCESS_TOKEN),
+    phoneNumberId,
+    verifyToken: sanitizeEnvValue(process.env.WHATSAPP_VERIFY_TOKEN),
     businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '',
     apiVersion: process.env.WHATSAPP_API_VERSION || 'v21.0',
     flowLoginId: process.env.WHATSAPP_FLOW_LOGIN_ID || '',

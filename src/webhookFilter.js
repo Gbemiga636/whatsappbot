@@ -16,20 +16,29 @@ function parseWebhookMessage(body) {
   };
 }
 
+function normalizePhoneNumberId(id) {
+  const v = String(id || '').trim();
+  if (!v) return '';
+  if (v.includes('=')) return v.split('=').pop().trim().replace(/\D/g, '');
+  return v.replace(/\D/g, '');
+}
+
 function shouldHandleWebhook(parsed, configuredPhoneNumberId) {
   if (!parsed) return { handle: false, reason: 'no_messages' };
-  if (!configuredPhoneNumberId) {
+  const expected = normalizePhoneNumberId(configuredPhoneNumberId);
+  if (!expected) {
     return { handle: false, reason: 'missing_phone_number_id_in_env' };
   }
   if (!parsed.phoneNumberId) {
     return { handle: true, reason: 'no_inbound_phone_id' };
   }
-  if (parsed.phoneNumberId !== configuredPhoneNumberId) {
+  const inbound = normalizePhoneNumberId(parsed.phoneNumberId);
+  if (inbound !== expected) {
     return {
       handle: false,
       reason: 'wrong_phone_number_id',
-      inbound: parsed.phoneNumberId,
-      expected: configuredPhoneNumberId,
+      inbound,
+      expected,
       display: parsed.displayNumber,
     };
   }

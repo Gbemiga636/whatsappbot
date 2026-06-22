@@ -59,6 +59,8 @@ app.get('/health', (_req, res) => {
       phoneNumberIdSuffix: config.whatsapp.phoneNumberId
         ? `…${config.whatsapp.phoneNumberId.slice(-6)}`
         : null,
+      phoneNumberIdLength: config.whatsapp.phoneNumberId?.length || 0,
+      phoneNumberIdValid: /^\d{10,20}$/.test(config.whatsapp.phoneNumberId || ''),
       tokenSet: !!config.whatsapp.token,
       verifyTokenSet: !!config.whatsapp.verifyToken,
     },
@@ -101,7 +103,13 @@ app.post('/webhook', async (req, res) => {
       const from = message.from;
       logger.info('Incoming message', { from, to: displayNumber });
 
-      if (message.id) await whatsapp.markAsRead(message.id);
+      if (message.id) {
+        try {
+          await whatsapp.markAsRead(message.id);
+        } catch (readErr) {
+          logger.warn('markAsRead failed', { message: readErr.message });
+        }
+      }
       await handleIncomingMessage(from, message);
     }
 
