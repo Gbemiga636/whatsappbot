@@ -405,7 +405,11 @@ function shouldTryNaturalLanguage(session, incoming) {
 
   if (/^(menu|home|start|hi|hello|hey|help|0)$/i.test(text)) return false;
 
-  if (session.step === NL_GATHER_STEP || session.data?.nlDraft) return true;
+  if (session.step === NL_GATHER_STEP || session.data?.nlDraft) {
+    if (/^(mtn|glo|airtel|9mobile|etisalat)$/i.test(text)) return true;
+    if (/^\d{2,7}$/.test(text)) return true;
+    return true;
+  }
 
   if (session.step === 'confirm' && (isAffirmation(text) || isDenial(text))) return true;
 
@@ -468,4 +472,6 @@ module.exports = {
   executeNaturalLanguage,
   shouldTryNaturalLanguage,
   tryNaturalLanguageRoute,
+  tryContinueDraft,
+  NL_GATHER_STEP,
 };

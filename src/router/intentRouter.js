@@ -191,8 +191,17 @@ async function parseNaturalLanguage(text) {
   if (regexOrder) return enrichIntent(regexOrder, text);
 
   if (config.openai.apiKey && config.features.naturalLanguage) {
-    const aiResult = await classifyIntentWithAI(text);
-    if (aiResult) return enrichIntent(aiResult, text);
+    try {
+      const aiResult = await Promise.race([
+        classifyIntentWithAI(text),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('AI intent timeout')), 8000)
+        ),
+      ]);
+      if (aiResult) return enrichIntent(aiResult, text);
+    } catch (err) {
+      logger.warn('AI intent skipped', { error: err.message });
+    }
   }
 
   const regexResult = classifyIntentRegex(text);

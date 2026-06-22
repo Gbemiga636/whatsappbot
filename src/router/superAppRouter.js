@@ -2,7 +2,7 @@
  * Super App message router — central orchestrator.
  */
 
-const { getSession, setSession } = require('../sessionStore');
+const { getSession, setSession, loadSessionFromDb } = require('../sessionStore');
 const { getUser, isAuthenticated } = require('../userStore');
 const { createContext } = require('../core/context');
 const logger = require('../core/logger');
@@ -90,17 +90,26 @@ async function handleIncomingMessage(from, message) {
     id: message.id,
   };
 
-  if (!incoming.text && !incoming.buttonId && !incoming.listId && !incoming.media) return;
-
-  // Restore user from Supabase on every message
-  if (isSupabaseReady()) {
-    await restoreUserByPhone(phone);
+  if (!incoming.text && !incoming.buttonId && !incoming.listId && !incoming.media) {
+    const whatsapp = require('../whatsapp');
+    await whatsapp.sendText(
+      phone,
+      'I received your message but cannot process this format yet.\n\nType *menu* or *hi*, or send text like *buy MTN airtime 500*.'
+    );
+    return;
   }
 
-  let session = getSession(phone);
+  // Restore session from Supabase (required on Netlify — in-memory cache is lost between cold starts)
+  let session = await loadSessionFromDb(phone);
   if (!session) {
     session = { step: 'idle', data: {}, activeService: null };
     setSession(phone, session);
+  }
+
+  // Restore user profile from Supabase
+
+  if (isSupabaseReady()) {
+    await restoreUserByPhone(phone);
   }
 
   const user = getUser(phone);

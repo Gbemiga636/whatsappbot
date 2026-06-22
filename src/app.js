@@ -112,7 +112,25 @@ app.post('/webhook', async (req, res) => {
           logger.warn('markAsRead failed', { message: readErr.message });
         }
       }
-      await handleIncomingMessage(from, message);
+
+      try {
+        await handleIncomingMessage(from, message);
+      } catch (msgErr) {
+        logger.error('Message handler failed', {
+          from,
+          message: msgErr.response?.data?.error?.message || msgErr.message,
+          code: msgErr.response?.data?.error?.code,
+        });
+        try {
+          const digits = String(from).replace(/\D/g, '');
+          await whatsapp.sendText(
+            digits,
+            '⚠️ *Something went wrong* while processing your message.\n\nType *menu* or *hi* to try again.'
+          );
+        } catch (sendErr) {
+          logger.error('Could not send error reply', { message: sendErr.message });
+        }
+      }
     }
 
     res.sendStatus(200);
