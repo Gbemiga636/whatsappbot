@@ -54,6 +54,15 @@ app.get('/health', (_req, res) => {
     billsProvider: config.bills.provider,
     erightVtu: !!config.bills.erightvtu.apiKey,
     vtpass: !!config.bills.vtpass.apiKey,
+    whatsapp: {
+      phoneNumberIdSet: !!config.whatsapp.phoneNumberId,
+      phoneNumberIdSuffix: config.whatsapp.phoneNumberId
+        ? `…${config.whatsapp.phoneNumberId.slice(-6)}`
+        : null,
+      tokenSet: !!config.whatsapp.token,
+      verifyTokenSet: !!config.whatsapp.verifyToken,
+    },
+    publicBaseUrl: config.publicBaseUrl || null,
     features: config.features,
     commission: config.wallet.commissionPercent,
   });
@@ -72,14 +81,19 @@ app.get('/webhook', (req, res) => {
 });
 
 app.post('/webhook', async (req, res) => {
-  res.sendStatus(200);
-
   try {
     const parsed = parseWebhookMessage(req.body);
-    if (!parsed) return;
+    if (!parsed) {
+      res.sendStatus(200);
+      return;
+    }
 
     const decision = shouldHandleWebhook(parsed, config.whatsapp.phoneNumberId);
-    if (!decision.handle) return;
+    if (!decision.handle) {
+      logger.warn('Webhook ignored', decision);
+      res.sendStatus(200);
+      return;
+    }
 
     const { messages, displayNumber } = parsed;
 
@@ -90,6 +104,8 @@ app.post('/webhook', async (req, res) => {
       if (message.id) await whatsapp.markAsRead(message.id);
       await handleIncomingMessage(from, message);
     }
+
+    res.sendStatus(200);
   } catch (err) {
     logger.error('Webhook error', {
       message: err.response?.data?.error?.message || err.message,
@@ -97,6 +113,7 @@ app.post('/webhook', async (req, res) => {
       type: err.response?.data?.error?.type,
       status: err.response?.status,
     });
+    res.sendStatus(200);
   }
 });
 
