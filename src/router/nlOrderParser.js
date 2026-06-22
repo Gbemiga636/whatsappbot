@@ -12,20 +12,20 @@ function normalizeNetwork(raw) {
   return null;
 }
 
-function extractAmount(text) {
+function extractAmount(text, { minAmount = 50 } = {}) {
   const t = String(text || '');
   const patterns = [
-    /(?:₦|ngn|naira)\s*(\d{2,7})/i,
-    /(\d{2,7})\s*(?:₦|ngn|naira)/i,
-    /\b(\d{3,7})\s*(?:airtime|data|worth|for)\b/i,
-    /(?:buy|pay|send|recharge|load|top.?up)\s*(?:₦|naira)?\s*(\d{2,7})/i,
-    /\b(\d{3,7})\b/,
+    /(?:₦|ngn|naira)\s*(\d{1,7})/i,
+    /(\d{1,7})\s*(?:₦|ngn|naira)/i,
+    /\b(\d{1,7})\s*(?:airtime|data|worth|for)\b/i,
+    /(?:buy|pay|send|recharge|load|top.?up|want|need)\s*(?:₦|naira)?\s*(\d{1,7})/i,
+    /\b(\d{2,7})\b/,
   ];
   for (const p of patterns) {
     const m = t.match(p);
     if (m) {
       const n = Number(m[1]);
-      if (n >= 50 && n <= 500000) return n;
+      if (n >= minAmount && n <= 500000) return n;
     }
   }
   return null;
@@ -146,7 +146,7 @@ function resolveTelecomAction(text, params = {}, action) {
 function extractOrderParams(text) {
   const billMeter = extractMeterAndProvider(text);
   const plan = extractDataPlan(text);
-  const amount = extractAmount(text);
+  const amount = extractAmount(text, { minAmount: isAirtimeRequest(text, { plan }) ? 20 : 50 });
   const bill_type = extractBillType(text);
   const productType = resolveProductType(text, { plan, amount });
   const isBillOrder = !!bill_type;

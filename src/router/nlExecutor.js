@@ -16,13 +16,20 @@ const ai = require('../providers/openai');
 const { setSession, getSession } = require('../sessionStore');
 const { createContext } = require('../core/context');
 const { getUser } = require('../userStore');
-const { isAffirmation, isDenial, isOrderPhrase, isPurchaseIntent, normalizeNetwork } = require('./nlOrderParser');
+const { isAffirmation, isDenial, isOrderPhrase, isPurchaseIntent } = require('./nlOrderParser');
+const {
+  createTelecomDraft,
+  createBillDraft,
+  mergeDraft,
+  getMissingFields,
+  promptForField,
+  isNewOrderOverride,
+  draftToAirtime,
+  draftToBill,
+  NETWORKS,
+} = require('./nlOrderDraft');
 
-const NETWORKS = ['MTN', 'GLO', 'Airtel', '9mobile'];
-
-function resolveNetwork(raw) {
-  return normalizeNetwork(raw);
-}
+const NL_GATHER_STEP = 'nl_gather';
 
 function toLocalPhone(phone) {
   const digits = String(phone).replace(/\D/g, '');
@@ -39,6 +46,7 @@ async function replyHelp(phone) {
       `_No menu required — type an order directly:_\n\n` +
       `• "Get me airtime"\n` +
       `• "Buy MTN airtime 500"\n` +
+      `• "I want airtime 100" → bot asks only for network\n` +
       `• "Send 1000 Glo airtime to 08012345678"\n` +
       `• "Top up my MTN line with 500"\n` +
       `• "Buy 2GB MTN data"\n` +
@@ -102,74 +110,116 @@ async function showAirtimeConfirm(phone, airtime) {
       `_Say *yes* or tap Pay to complete._`,
     buttons.slice(0, 3)
   );
-  setSession(phone, { activeService: 'airtime', step: 'confirm', data: { airtime } });
+  setSession(phone, { activeService: 'airtime', step: 'confirm', data: { airtime, nlDraft: null } });
 }
 
-async function startAirtimeFromIntent(phone, params, type = 'airtime', ctx) {
-  const network = resolveNetwork(params.network);
-  let amount = params.amount ? Number(params.amount) : null;
-  const recipient = params.recipient === 'other' ? 'other' : 'self';
-  let targetPhone =
-    recipient === 'self' ? toLocalPhone(phone) : params.phone ? toLocalPhone(params.phone) : null;
+async function continueFromDraft(phone, draft, session = {}) {
+  const missing = getMissingFields(draft);
 
-  if (!network || !NETWORKS.includes(network)) {
-    const svc = getService('airtime');
-    const label = type === 'data' ? 'data' : 'airtime';
-    await svc.list(phone, `*Buy ${label}*\n\nSelect network:`, 'Network', [{
-      title: 'Networks',
-      rows: NETWORKS.map((n) => ({
-        id: `net_${n.toLowerCase()}`,
-        title: n,
-        description: type === 'data' ? 'Data bundle' : 'Airtime',
-      })),
-    }]);
-    setSession(phone, {
-      activeService: 'airtime',
-      step: 'pick_network',
-      data: { airtime: { type, recipientType: recipient, phone: targetPhone || undefined } },
-    });
-    return true;
-  }
-
-  const airtime = { type, network, recipientType: recipient };
-
-  if (recipient === 'other' && !targetPhone) {
-    setSession(phone, { activeService: 'airtime', step: 'enter_phone', data: { airtime } });
-    await whatsapp.sendText(phone, `*${network} ${type}*\n\nEnter recipient phone:\n\n_e.g. 08012345678_`);
-    return true;
-  }
-
-  airtime.phone = targetPhone;
-
-  if (type === 'data') {
-    const plan = params.plan || params.value;
-    if (!plan) {
-      setSession(phone, { activeService: 'airtime', step: 'enter_amount', data: { airtime } });
-      await whatsapp.sendText(phone, `*${network} data* for ${targetPhone}.\n\nEnter plan (e.g. 1GB, 2GB):`);
-      return true;
+  if (missing.length === 0) {
+    if (draft.action === 'buy_airtime' || draft.action === 'buy_data') {
+      return completeTelecomDraft(phone, draft);
     }
+    if (draft.action === 'pay_bill') {
+      return completeBillDraft(phone, draft);
+    }
+  }
+
+  const field = missing[0];
+  await whatsapp.sendText(phone, promptForField(draft, field));
+
+  setSession(phone, {
+    activeService: draft.service,
+    step: NL_GATHER_STEP,
+    data: {
+      ...(session.data?.nlHistory ? { nlHistory: session.data.nlHistory } : {}),
+      nlDraft: draft,
+    },
+  });
+  return true;
+}
+
+async function completeTelecomDraft(phone, draft) {
+  const airtime = draftToAirtime(draft);
+
+  if (!airtime.network || !NETWORKS.includes(airtime.network)) {
+    return continueFromDraft(phone, draft);
+  }
+
+  if (airtime.type === 'data') {
+    const plan = airtime.plan || airtime.value;
+    if (!plan) return continueFromDraft(phone, draft);
     airtime.value = plan;
-    const resolved = await telecom.resolveDataPlan(network, plan);
+    const resolved = await telecom.resolveDataPlan(airtime.network, plan);
     if (!resolved.ok) {
       await whatsapp.sendText(phone, resolved.message);
-      return true;
+      return continueFromDraft(phone, draft);
     }
     airtime.resolvedPlan = resolved;
     airtime.amount = resolved.amount;
-    await showAirtimeConfirm(phone, airtime);
-    return true;
+  } else {
+    if (!airtime.amount || airtime.amount < 50) {
+      await whatsapp.sendText(phone, 'Minimum airtime is *₦50*. Enter a higher amount.');
+      const nextDraft = { ...draft, params: { ...draft.params, amount: null } };
+      return continueFromDraft(phone, nextDraft);
+    }
+    airtime.phone = airtime.phone || toLocalPhone(phone);
+    airtime.value = String(airtime.amount);
   }
 
-  if (!amount || amount < 50) {
-    setSession(phone, { activeService: 'airtime', step: 'enter_amount', data: { airtime } });
-    await whatsapp.sendText(phone, `*${network} airtime* for ${targetPhone}.\n\nEnter amount (e.g. 500):`);
-    return true;
+  if (airtime.recipientType === 'other' && !airtime.phone) {
+    return continueFromDraft(phone, draft);
   }
 
-  airtime.amount = amount;
-  airtime.value = String(amount);
+  airtime.phone = airtime.phone || toLocalPhone(phone);
   await showAirtimeConfirm(phone, airtime);
   return true;
+}
+
+async function completeBillDraft(phone, draft) {
+  const bill = draftToBill(draft);
+  if (!bill.amount || bill.amount < 100) {
+    await whatsapp.sendText(phone, 'Minimum bill payment is *₦100*.');
+    const nextDraft = { ...draft, params: { ...draft.params, amount: null } };
+    return continueFromDraft(phone, nextDraft);
+  }
+  await showBillConfirm(phone, bill);
+  return true;
+}
+
+async function tryContinueDraft(phone, text, session) {
+  const draft = session.data?.nlDraft;
+  if (!draft || session.step !== NL_GATHER_STEP) return false;
+
+  if (isDenial(text)) {
+    await whatsapp.sendText(phone, 'Order cancelled.');
+    setSession(phone, {
+      step: 'super_menu',
+      activeService: null,
+      data: { ...(session.data?.nlHistory ? { nlHistory: session.data.nlHistory } : {}) },
+    });
+    await showSuperAppMenu(phone);
+    return true;
+  }
+
+  if (isNewOrderOverride(text, draft)) return false;
+
+  const merged = mergeDraft(draft, text, phone);
+  return continueFromDraft(phone, merged, session);
+}
+
+async function startAirtimeFromIntent(phone, params, type = 'airtime', ctx) {
+  const session = getSession(phone) || { step: 'idle', data: {} };
+  const existing = session.data?.nlDraft;
+  const action = type === 'data' ? 'buy_data' : 'buy_airtime';
+
+  let mergedParams = { ...params, type };
+  if (existing?.action === action) {
+    mergedParams = { ...existing.params, ...mergedParams };
+  }
+
+  const draft = createTelecomDraft(type, mergedParams, phone);
+  return continueFromDraft(phone, draft, session);
 }
 
 async function showBillConfirm(phone, bill) {
@@ -193,48 +243,20 @@ async function showBillConfirm(phone, bill) {
     `*Confirm bill payment*\n\nType: ${bill.type}\n${detail}\nAmount: ${wallet.formatNaira(bill.amount)}\n\n${pricing.text}\n\n_Say *yes* or tap Pay to complete._`,
     buttons.slice(0, 3)
   );
-  setSession(phone, { activeService: 'bills', step: 'confirm', data: { bill } });
+  setSession(phone, { activeService: 'bills', step: 'confirm', data: { bill, nlDraft: null } });
 }
 
 async function startBillFromIntent(phone, params, ctx) {
-  const type = params.bill_type || params.type;
-  if (!type) {
-    return routeToServiceLazy(phone, 'bills', ctx);
+  const session = getSession(phone) || { step: 'idle', data: {} };
+  const existing = session.data?.nlDraft;
+
+  let mergedParams = { ...params };
+  if (existing?.action === 'pay_bill') {
+    mergedParams = { ...existing.params, ...mergedParams };
   }
 
-  const bill = { type };
-
-  if (type === 'electricity') {
-    if (!params.meter) {
-      setSession(phone, { activeService: 'bills', step: 'enter_meter', data: { bill: { type } } });
-      await whatsapp.sendText(
-        phone,
-        '⚡ *Electricity bill*\n\nSend meter number and provider:\n\n_Example: 45012345678, IKEDC_'
-      );
-      return true;
-    }
-    bill.meter = params.meter;
-    bill.provider = (params.provider || 'IKEDC').toUpperCase();
-  } else {
-    const card = params.smartcard || params.meter;
-    if (!card) {
-      setSession(phone, { activeService: 'bills', step: 'enter_meter', data: { bill: { type } } });
-      await whatsapp.sendText(phone, `📺 *${type.toUpperCase()}*\n\nEnter your smartcard number:`);
-      return true;
-    }
-    bill.smartcard = card;
-  }
-
-  const amount = Number(params.amount);
-  if (!amount || amount < 100) {
-    setSession(phone, { activeService: 'bills', step: 'enter_amount', data: { bill } });
-    await whatsapp.sendText(phone, `Enter amount in Naira for your ${type} bill:`);
-    return true;
-  }
-
-  bill.amount = amount;
-  await showBillConfirm(phone, bill);
-  return true;
+  const draft = createBillDraft(mergedParams);
+  return continueFromDraft(phone, draft, session);
 }
 
 async function tryConfirmFromText(phone, text, session) {
@@ -277,7 +299,8 @@ async function executeNaturalLanguage(phone, intent, ctx) {
 
   logger.info('NL intent executing', { phone, service, action, params, confidence: intent.confidence });
 
-  if (isPurchaseIntent(intent)) {
+  // Keep nlHistory; do not wipe in-progress draft unless starting a fresh purchase below
+  if (isPurchaseIntent(intent) && !session.data?.nlDraft) {
     setSession(phone, {
       step: 'idle',
       activeService: null,
@@ -382,14 +405,20 @@ function shouldTryNaturalLanguage(session, incoming) {
 
   if (/^(menu|home|start|hi|hello|hey|help|0)$/i.test(text)) return false;
 
+  if (session.step === NL_GATHER_STEP || session.data?.nlDraft) return true;
+
   if (session.step === 'confirm' && (isAffirmation(text) || isDenial(text))) return true;
 
   if (isOrderPhrase(text)) {
-    if (session.activeService && /^[₦]?\d+([.,]\d+)?$/.test(text)) return false;
+    if (session.activeService && session.step !== NL_GATHER_STEP && /^[₦]?\d+([.,]\d+)?$/.test(text)) {
+      return false;
+    }
     return true;
   }
 
-  if (session.activeService && /^[₦]?\d+([.,]\d+)?$/.test(text)) return false;
+  if (session.activeService && session.step !== NL_GATHER_STEP && /^[₦]?\d+([.,]\d+)?$/.test(text)) {
+    return false;
+  }
 
   if (!session.activeService || session.step === 'super_menu' || session.step === 'idle') return true;
 
@@ -405,6 +434,8 @@ async function tryNaturalLanguageRoute(phone, incoming, ctx) {
   const { requiresAuth, promptLoginRequired } = require('./authHandler');
 
   if (await tryConfirmFromText(phone, incoming.text, session)) return true;
+
+  if (await tryContinueDraft(phone, incoming.text, session)) return true;
 
   const { parseNaturalLanguage } = require('./intentRouter');
   const intent = await parseNaturalLanguage(incoming.text);

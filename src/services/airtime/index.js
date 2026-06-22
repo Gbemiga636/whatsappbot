@@ -1,6 +1,7 @@
 const BaseService = require('../BaseService');
 const telecom = require('../../providers/telecomProvider');
 const { confirmAndPay, confirmAndPayWithCredit, wallet, credit } = require('../../wallet/purchaseHelper');
+const { normalizeNetwork } = require('../../router/nlOrderParser');
 
 const NETWORKS = ['MTN', 'GLO', 'Airtel', '9mobile'];
 
@@ -58,9 +59,13 @@ class AirtimeService extends BaseService {
     }
 
     if (step === this.STEPS.PICK_NETWORK || choice?.startsWith('net_')) {
-      const net = choice?.replace('net_', '');
+      const netFromChoice = choice?.replace('net_', '');
+      const netFromText = !netFromChoice && ctx.text ? normalizeNetwork(ctx.text) : null;
+      const net = netFromChoice || (netFromText ? netFromText.toLowerCase() : null);
       if (net) {
-        const airtime = { ...data.airtime, network: net.toUpperCase() };
+        const network = netFromChoice ? net.toUpperCase() : netFromText;
+        if (!NETWORKS.includes(network)) return this.showMenu(ctx);
+        const airtime = { ...data.airtime, network };
         await this.buttons(
           ctx.phone,
           `*${net.toUpperCase()} ${airtime.type}*\n\nWho are you buying for?`,
