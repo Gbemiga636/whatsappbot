@@ -9,6 +9,7 @@ const { showSuperAppMenu } = require('./superAppMenu');
 const { isSupabaseReady, signOut, restoreUserByPhone } = require('../auth/supabaseAuth');
 const supabaseFlow = require('../flows/supabaseAuthFlow');
 const legacyFlow = require('../flows/authFlow');
+const wallet = require('../wallet/walletService');
 
 const AUTH_STEPS = new Set([
   'auth_welcome',
@@ -24,16 +25,34 @@ function useSupabaseAuth() {
   return isSupabaseReady();
 }
 
+function normalizePhone(phone) {
+  return wallet.normalizePhone(phone) || String(phone || '').replace(/\D/g, '');
+}
+
+async function applyAuthStepResult(phone, next) {
+  if (!next) return;
+  setSession(phone, {
+    step: next.step,
+    activeService: null,
+    data: next.data || {},
+  });
+  if (next.step === 'super_menu') {
+    await showSuperAppMenu(phone, { offerTopUp: true });
+  }
+}
+
 async function promptLoginRequired(phone) {
+  const normalizedPhone = normalizePhone(phone);
   await whatsapp.sendText(
-    phone,
+    normalizedPhone,
     '🔐 *Login required*\n\nCreate an account or log in to use Mysogi services.'
   );
-  const next = await supabaseFlow.showAuthWelcome(phone);
-  setSession(phone, { step: next.step, activeService: null, data: next.data });
+  const next = await supabaseFlow.showAuthWelcome(normalizedPhone);
+  setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
 }
 
 async function handleAuthSteps(phone, message, session) {
+  const normalizedPhone = normalizePhone(phone);
   const text = message.text?.body || '';
   const buttonId = message.interactive?.button_reply?.id || '';
   const listId = message.interactive?.list_reply?.id || '';
@@ -42,71 +61,76 @@ async function handleAuthSteps(phone, message, session) {
 
   if (useSupabaseAuth()) {
     if (choice === 'auth_login' && session.step === 'auth_welcome') {
-      const next = await supabaseFlow.startLogin(phone);
-      setSession(phone, { step: next.step, activeService: null, data: next.data });
+      const next = await supabaseFlow.startLogin(normalizedPhone);
+      setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
       return true;
     }
     if (choice === 'auth_signup' && session.step === 'auth_welcome') {
-      const next = await supabaseFlow.startSignup(phone);
-      setSession(phone, { step: next.step, activeService: null, data: next.data });
+      const next = await supabaseFlow.startSignup(normalizedPhone);
+      setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
       return true;
     }
     if (choice === 'auth_otp' || (choice === 'auth_login' && session.step !== 'auth_welcome')) {
-      const next = await supabaseFlow.startOtpLogin(phone);
-      setSession(phone, { step: next.step, activeService: null, data: next.data });
+      const next = await supabaseFlow.startOtpLogin(normalizedPhone);
+      setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
       return true;
     }
 
     if (session.step === 'auth_login_email') {
-      const next = await supabaseFlow.handleLoginEmail(phone, text, data);
-      if (next) {
-        if (next.step === 'super_menu') await showSuperAppMenu(phone, { offerTopUp: true });
-        else setSession(phone, { step: next.step, activeService: null, data: next.data });
-      }
+      const next = await supabaseFlow.handleLoginEmail(normalizedPhone, text, data);
+      await applyAuthStepResult(normalizedPhone, next);
       return true;
     }
 
     if (session.step === 'auth_login_password') {
-      const next = await supabaseFlow.handleLoginPassword(phone, text, data);
-      if (next) await showSuperAppMenu(phone, { offerTopUp: true });
+      const next = await supabaseFlow.handleLoginPassword(normalizedPhone, text, data);
+      await applyAuthStepResult(normalizedPhone, next);
       return true;
     }
 
     if (session.step === 'auth_signup') {
-      const next = await supabaseFlow.handleSignupInput(phone, text, data);
-      if (next) await showSuperAppMenu(phone, { offerTopUp: true });
+      const next = await supabaseFlow.handleSignupInput(normalizedPhone, text, data, {
+        buttonId,
+        listId,
+      });
+      await applyAuthStepResult(normalizedPhone, next);
       return true;
     }
 
     if (session.step === 'auth_otp_email') {
-      const next = await supabaseFlow.handleOtpEmail(phone, text, data);
-      if (next) setSession(phone, { step: next.step, activeService: null, data: next.data });
+      const next = await supabaseFlow.handleOtpEmail(normalizedPhone, text, data);
+      if (next) setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
       return true;
     }
 
     if (session.step === 'auth_otp_code') {
-      const next = await supabaseFlow.handleOtpCode(phone, text, data);
-      if (next) await showSuperAppMenu(phone, { offerTopUp: true });
+      const next = await supabaseFlow.handleOtpCode(normalizedPhone, text, data);
+      await applyAuthStepResult(normalizedPhone, next);
       return true;
     }
   }
 
   // Legacy Mysogi OTP fallback
   if (session.step === 'auth_otp_email') {
-    const next = await legacyFlow.handleOtpEmail(phone, text, data);
-    if (next) setSession(phone, { step: next.step, activeService: null, data: next.data });
+    const next = await legacyFlow.handleOtpEmail(normalizedPhone, text, data);
+    if (next) setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
     return true;
   }
   if (session.step === 'auth_otp_code') {
-    const next = await legacyFlow.handleOtpCode(phone, text, data);
-    if (next) await showSuperAppMenu(phone);
+    const next = await legacyFlow.handleOtpCode(normalizedPhone, text, data);
+    if (next?.step === 'main_menu') await showSuperAppMenu(normalizedPhone);
+    else if (next) setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
     return true;
   }
   if (session.step === 'auth_signup') {
-    const next = await legacyFlow.handleSignupInput(phone, { text, buttonId, listId }, data);
+    const next = await legacyFlow.handleSignupInput(
+      normalizedPhone,
+      { text, buttonId, listId },
+      data
+    );
     if (next) {
-      if (next.step === 'main_menu') await showSuperAppMenu(phone);
-      else setSession(phone, { step: next.step, activeService: null, data: next.data });
+      if (next.step === 'main_menu') await showSuperAppMenu(normalizedPhone);
+      else setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
     }
     return true;
   }
@@ -115,50 +139,57 @@ async function handleAuthSteps(phone, message, session) {
 }
 
 async function handleAuthAction(phone, action) {
+  const normalizedPhone = normalizePhone(phone);
   switch (action) {
     case 'auth_login': {
       if (useSupabaseAuth()) {
-        const next = await supabaseFlow.startLogin(phone);
-        setSession(phone, { step: next.step, activeService: null, data: next.data });
+        const next = await supabaseFlow.startLogin(normalizedPhone);
+        setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
       } else {
-        const next = await legacyFlow.startOtpLogin(phone);
-        setSession(phone, { step: 'auth_otp_email', activeService: null, data: next.data });
+        const next = await legacyFlow.startOtpLogin(normalizedPhone);
+        setSession(normalizedPhone, { step: 'auth_otp_email', activeService: null, data: next.data });
       }
       return true;
     }
     case 'auth_signup': {
       if (useSupabaseAuth()) {
-        const next = await supabaseFlow.startSignup(phone);
-        setSession(phone, { step: next.step, activeService: null, data: next.data });
+        const next = await supabaseFlow.startSignup(normalizedPhone);
+        setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
       } else {
-        const next = await legacyFlow.startSignup(phone);
-        setSession(phone, { step: 'auth_signup', activeService: null, data: next.data });
+        const next = await legacyFlow.startSignup(normalizedPhone);
+        setSession(normalizedPhone, { step: 'auth_signup', activeService: null, data: next.data });
       }
       return true;
     }
     case 'auth_logout': {
-      if (useSupabaseAuth()) await signOut(phone);
+      if (useSupabaseAuth()) await signOut(normalizedPhone);
       else {
         const { setUser } = require('../userStore');
-        setUser(phone, { authMode: 'guest', email: null, mysogiToken: null, firstName: null, lastName: null });
+        setUser(normalizedPhone, {
+          authMode: 'guest',
+          email: null,
+          mysogiToken: null,
+          firstName: null,
+          lastName: null,
+        });
       }
-      await whatsapp.sendText(phone, '✅ Logged out. Type *hi* to log in again.');
-      const next = await supabaseFlow.showAuthWelcome(phone);
-      setSession(phone, { step: next.step, activeService: null, data: next.data });
+      await whatsapp.sendText(normalizedPhone, '✅ Logged out. Type *hi* to log in again.');
+      const next = await supabaseFlow.showAuthWelcome(normalizedPhone);
+      setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
       return true;
     }
     case 'auth_profile': {
-      const user = getUser(phone);
+      const user = getUser(normalizedPhone);
       await whatsapp.sendText(
-        phone,
+        normalizedPhone,
         `*Your Mysogi profile*\n\n` +
           `Name: ${[user?.firstName, user?.lastName].filter(Boolean).join(' ') || '—'}\n` +
           `Email: ${user?.email || '—'}\n` +
-          `Phone: +${phone.replace(/^\+/, '')}\n` +
+          `Phone: +${normalizedPhone.replace(/^\+/, '')}\n` +
           `KYC Level: ${user?.kycLevel || 0}\n` +
           `Wallet: ₦${Number(user?.walletBalance || 0).toLocaleString('en-NG')}`
       );
-      await showSuperAppMenu(phone);
+      await showSuperAppMenu(normalizedPhone);
       return true;
     }
     default:

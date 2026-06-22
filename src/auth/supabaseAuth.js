@@ -5,29 +5,43 @@
 const { getSupabase, isSupabaseReady } = require('../db/supabase');
 const { setUser, getUser } = require('../userStore');
 const logger = require('../core/logger');
+const config = require('../config');
+const wallet = require('../wallet/walletService');
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((email || '').trim());
 }
 
+function normalizePhone(phone) {
+  return wallet.normalizePhone(phone) || String(phone || '').replace(/\D/g, '');
+}
+
 function formatPhone(phone) {
-  const digits = String(phone).replace(/\D/g, '');
-  return digits.startsWith('234') ? digits : digits.startsWith('0') ? `234${digits.slice(1)}` : digits;
+  return normalizePhone(phone);
+}
+
+function hasServiceRoleKey() {
+  return !!config.supabase?.serviceRoleKey;
+}
+
+function isValidName(name) {
+  return String(name || '').trim().length >= 2;
 }
 
 async function linkWhatsAppProfile(phone, authUser, extra = {}) {
   const db = getSupabase();
   if (!db) return { ok: false, message: 'Database not configured' };
 
+  const normalizedPhone = normalizePhone(phone);
   const meta = authUser.user_metadata || {};
   const { data: existingRow } = await db
     .from('whatsapp_users')
-    .select('metadata')
-    .eq('phone', phone)
+    .select('metadata, wallet_balance')
+    .eq('phone', normalizedPhone)
     .maybeSingle();
 
   const row = {
-    phone,
+    phone: normalizedPhone,
     email: authUser.email,
     first_name: extra.firstName || meta.first_name || meta.firstName || '',
     last_name: extra.lastName || meta.last_name || meta.lastName || '',
@@ -46,11 +60,11 @@ async function linkWhatsAppProfile(phone, authUser, extra = {}) {
     .single();
 
   if (error) {
-    logger.error('linkWhatsAppProfile failed', { phone, error: error.message });
+    logger.error('linkWhatsAppProfile failed', { phone: normalizedPhone, error: error.message });
     return { ok: false, message: error.message };
   }
 
-  setUser(phone, {
+  setUser(normalizedPhone, {
     email: data.email,
     firstName: data.first_name,
     lastName: data.last_name,
@@ -68,15 +82,16 @@ async function linkWhatsAppProfile(phone, authUser, extra = {}) {
 
 async function restoreUserByPhone(phone) {
   const db = getSupabase();
-  if (!db) return getUser(phone);
+  const normalizedPhone = normalizePhone(phone);
+  if (!db) return getUser(normalizedPhone);
 
   const { data, error } = await db
     .from('whatsapp_users')
     .select('*')
-    .eq('phone', phone)
+    .eq('phone', normalizedPhone)
     .maybeSingle();
 
-  if (error || !data) return getUser(phone);
+  if (error || !data) return getUser(normalizedPhone);
 
   const patch = {
     metadata: data.metadata || {},
@@ -96,47 +111,66 @@ async function restoreUserByPhone(phone) {
     });
   }
 
-  const current = getUser(phone) || { phone };
-  setUser(phone, { ...current, ...patch });
+  const current = getUser(normalizedPhone) || { phone: normalizedPhone };
+  setUser(normalizedPhone, { ...current, ...patch });
 
-  return getUser(phone);
+  return getUser(normalizedPhone);
 }
 
 async function signUp({ phone, email, password, firstName, lastName }) {
   const db = getSupabase();
   if (!db) return { ok: false, message: 'Supabase not configured' };
 
-  if (!isValidEmail(email)) return { ok: false, message: 'Invalid email address' };
+  if (!hasServiceRoleKey()) {
+    return {
+      ok: false,
+      message:
+        'Signup is not configured on the server. Add SUPABASE_SERVICE_ROLE_KEY to your Netlify environment variables.',
+    };
+  }
+
+  const normalizedPhone = normalizePhone(phone);
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanFirst = String(firstName || '').trim();
+  const cleanLast = String(lastName || '').trim();
+
+  if (!isValidName(cleanFirst) || !isValidName(cleanLast)) {
+    return { ok: false, message: 'First and last name must be at least 2 characters each.' };
+  }
+  if (!isValidEmail(cleanEmail)) return { ok: false, message: 'Invalid email address' };
   if (!password || password.length < 6) return { ok: false, message: 'Password must be at least 6 characters' };
 
   const { data, error } = await db.auth.admin.createUser({
-    email: email.trim().toLowerCase(),
+    email: cleanEmail,
     password,
     email_confirm: true,
     user_metadata: {
-      first_name: firstName,
-      last_name: lastName,
-      phone: formatPhone(phone),
+      first_name: cleanFirst,
+      last_name: cleanLast,
+      phone: normalizedPhone,
       source: 'whatsapp',
     },
   });
 
   if (error) {
-    const msg = error.message.includes('already')
+    const msg = /already|registered|exists/i.test(error.message)
       ? 'This email is already registered. Type *login* instead.'
       : error.message;
     return { ok: false, message: msg };
   }
 
-  const linked = await linkWhatsAppProfile(phone, data.user, { firstName, lastName });
+  const linked = await linkWhatsAppProfile(normalizedPhone, data.user, {
+    firstName: cleanFirst,
+    lastName: cleanLast,
+  });
   if (!linked.ok) return { ok: false, message: linked.message };
 
   return {
     ok: true,
     user: {
       email: data.user.email,
-      firstName,
-      lastName,
+      firstName: cleanFirst,
+      lastName: cleanLast,
       id: data.user.id,
     },
     message: 'Account created successfully',
@@ -147,20 +181,27 @@ async function signIn({ phone, email, password }) {
   const db = getSupabase();
   if (!db) return { ok: false, message: 'Supabase not configured' };
 
-  if (!isValidEmail(email)) return { ok: false, message: 'Invalid email address' };
+  const normalizedPhone = normalizePhone(phone);
+  const cleanEmail = email.trim().toLowerCase();
+
+  if (!isValidEmail(cleanEmail)) return { ok: false, message: 'Invalid email address' };
 
   const { data, error } = await db.auth.signInWithPassword({
-    email: email.trim().toLowerCase(),
+    email: cleanEmail,
     password,
   });
 
   if (error) {
-    return { ok: false, message: error.message === 'Invalid login credentials'
-      ? 'Wrong email or password. Try again or type *signup*.'
-      : error.message };
+    return {
+      ok: false,
+      message:
+        error.message === 'Invalid login credentials'
+          ? 'Wrong email or password. Try again or type *signup*.'
+          : error.message,
+    };
   }
 
-  const linked = await linkWhatsAppProfile(phone, data.user);
+  const linked = await linkWhatsAppProfile(normalizedPhone, data.user);
   if (!linked.ok) return { ok: false, message: linked.message };
 
   return {
@@ -200,7 +241,7 @@ async function verifyEmailOtp({ phone, email, token }) {
 
   if (error) return { ok: false, message: 'Invalid or expired code. Type *login* to try again.' };
 
-  const linked = await linkWhatsAppProfile(phone, data.user);
+  const linked = await linkWhatsAppProfile(normalizePhone(phone), data.user);
   if (!linked.ok) return { ok: false, message: linked.message };
 
   return { ok: true, user: data.user, message: 'Logged in successfully' };
@@ -208,14 +249,15 @@ async function verifyEmailOtp({ phone, email, token }) {
 
 async function signOut(phone) {
   const db = getSupabase();
+  const normalizedPhone = normalizePhone(phone);
   if (db) {
     await db
       .from('whatsapp_users')
       .update({ auth_mode: 'guest', updated_at: new Date().toISOString() })
-      .eq('phone', phone);
+      .eq('phone', normalizedPhone);
   }
 
-  setUser(phone, {
+  setUser(normalizedPhone, {
     authMode: 'guest',
     email: null,
     firstName: null,
@@ -245,7 +287,9 @@ async function checkDatabase() {
 
 module.exports = {
   isSupabaseReady,
+  hasServiceRoleKey,
   isValidEmail,
+  isValidName,
   signUp,
   signIn,
   sendEmailOtp,
@@ -255,4 +299,5 @@ module.exports = {
   restoreUserByPhone,
   checkDatabase,
   formatPhone,
+  normalizePhone,
 };

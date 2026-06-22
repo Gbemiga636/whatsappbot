@@ -5,6 +5,7 @@
 const whatsapp = require('../whatsapp');
 const {
   isValidEmail,
+  isValidName,
   signUp,
   signIn,
   sendEmailOtp,
@@ -18,6 +19,46 @@ function formatName(user) {
   const email = (user?.email || '').trim();
   if (email.includes('@')) return email.split('@')[0];
   return 'there';
+}
+
+function parseSignupBulk(text) {
+  const line = String(text || '')
+    .replace(/\n/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const parts = line.split(/\s*[|,;]\s*/).map((p) => p.trim()).filter(Boolean);
+
+  if (parts.length < 4) {
+    return {
+      ok: false,
+      message:
+        'Send all details in *one line*:\n\n' +
+        'First name | Last name | Email | Password\n\n' +
+        'Example:\nAda | Okafor | ada@email.com | mypass123',
+    };
+  }
+
+  const [firstName, lastName, email, password] = parts;
+
+  if (!isValidName(firstName) || !isValidName(lastName)) {
+    return { ok: false, message: 'First and last name must be at least 2 characters each.' };
+  }
+  if (!isValidEmail(email)) {
+    return { ok: false, message: 'Enter a valid email address.' };
+  }
+  if (!password || password.length < 6) {
+    return { ok: false, message: 'Password must be at least 6 characters.' };
+  }
+
+  return {
+    ok: true,
+    data: {
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: email.trim().toLowerCase(),
+      password,
+    },
+  };
 }
 
 async function showAuthWelcome(phone) {
@@ -52,13 +93,51 @@ async function startSignup(phone) {
   await whatsapp.sendText(
     phone,
     `*Create your Mysogi account*\n\n` +
-      `Send all details in *one line*, separated by *|*\n\n` +
+      `Send all details in *one line* (use *|* or *,* between fields):\n\n` +
       `*Format:*\nFirst name | Last name | Email | Password\n\n` +
       `*Example:*\nAda | Okafor | ada@email.com | mypass123\n\n` +
       `Phone: *+${formatPhone(phone)}* (from WhatsApp)\n` +
       `_Password: min 6 characters. Type *menu* to cancel._`
   );
-  return { step: 'auth_signup', data: { authMode: 'signup_pending' } };
+  return { step: 'auth_signup', data: { authMode: 'signup_pending', signupStep: 'bulk' } };
+}
+
+async function showSignupConfirm(phone, draft) {
+  await whatsapp.sendButtons(
+    phone,
+    `*Confirm your account*\n\n` +
+      `Name: ${draft.firstName} ${draft.lastName}\n` +
+      `Email: ${draft.email}\n` +
+      `Phone: +${formatPhone(phone)}\n\n` +
+      `Tap *Create account* to finish.`,
+    [
+      { id: 'signup_confirm', title: 'Create account' },
+      { id: 'signup_restart', title: 'Start over' },
+    ]
+  );
+}
+
+async function createSignupAccount(phone, draft) {
+  await whatsapp.sendText(phone, '⏳ Creating your account…');
+  const result = await signUp({
+    phone,
+    email: draft.email,
+    password: draft.password,
+    firstName: draft.firstName,
+    lastName: draft.lastName,
+  });
+
+  if (!result.ok) {
+    await whatsapp.sendText(phone, `❌ *${result.message}*`);
+    return null;
+  }
+
+  const name = formatName(result.user);
+  await whatsapp.sendText(
+    phone,
+    `✅ *Account created!*\n\nWelcome to Mysogi, *${name}*! 🎉\n\nYour account works across all services.`
+  );
+  return { step: 'super_menu', data: { authMode: 'authenticated', userEmail: result.user.email } };
 }
 
 async function handleLoginEmail(phone, text, data) {
@@ -113,39 +192,39 @@ async function completeLogin(phone, email, password, data) {
   return { step: 'super_menu', data: { authMode: 'authenticated', userEmail: result.user.email } };
 }
 
-async function handleSignupInput(phone, text, data) {
-  if (!text || !text.includes('|')) {
-    await whatsapp.sendText(phone, 'Use the format:\nFirst | Last | Email | Password');
+async function handleSignupInput(phone, text, data, { buttonId = '', listId = '' } = {}) {
+  const choice = buttonId || listId;
+
+  if (choice === 'signup_restart') {
+    return startSignup(phone);
+  }
+
+  if (data.signupStep === 'confirm') {
+    if (choice === 'signup_confirm' && data.signupDraft) {
+      return createSignupAccount(phone, data.signupDraft);
+    }
+    if (!choice) {
+      await whatsapp.sendText(phone, 'Tap *Create account* above to confirm, or type *signup* to start over.');
+    }
     return null;
   }
 
-  const parts = text.split('|').map((p) => p.trim());
-  if (parts.length < 4) {
-    await whatsapp.sendText(phone, 'Need 4 parts: First | Last | Email | Password');
+  const parsed = parseSignupBulk(text);
+  if (!parsed.ok) {
+    await whatsapp.sendText(phone, `❌ ${parsed.message}`);
     return null;
   }
 
-  const [firstName, lastName, email, password] = parts;
-
-  if (!isValidEmail(email)) {
-    await whatsapp.sendText(phone, 'Invalid email address.');
-    return null;
-  }
-
-  await whatsapp.sendText(phone, '⏳ Creating your account…');
-  const result = await signUp({ phone, email, password, firstName, lastName });
-
-  if (!result.ok) {
-    await whatsapp.sendText(phone, `❌ *${result.message}*`);
-    return null;
-  }
-
-  const name = formatName(result.user);
-  await whatsapp.sendText(
-    phone,
-    `✅ *Account created!*\n\nWelcome to Mysogi, *${name}*! 🎉\n\nYour account works across all services.`
-  );
-  return { step: 'super_menu', data: { authMode: 'authenticated', userEmail: result.user.email } };
+  await showSignupConfirm(phone, parsed.data);
+  return {
+    step: 'auth_signup',
+    data: {
+      ...data,
+      authMode: 'signup_pending',
+      signupStep: 'confirm',
+      signupDraft: parsed.data,
+    },
+  };
 }
 
 async function startOtpLogin(phone) {
@@ -204,4 +283,5 @@ module.exports = {
   handleOtpEmail,
   handleOtpCode,
   formatName,
+  parseSignupBulk,
 };

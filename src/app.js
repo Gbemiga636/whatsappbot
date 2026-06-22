@@ -7,6 +7,7 @@ const securePin = require('./routes/securePin');
 const { handlePaystackWebhook, paystackCallback } = require('./routes/paystackWebhook');
 const { parseWebhookMessage, shouldHandleWebhook } = require('./webhookFilter');
 const { initSupabase, isSupabaseReady } = require('./db/supabase');
+const { hasServiceRoleKey } = require('./auth/supabaseAuth');
 const logger = require('./core/logger');
 
 initSupabase();
@@ -50,6 +51,7 @@ app.get('/health', (_req, res) => {
     service: 'mysogi-super-app',
     version: '2.1.0',
     supabase: isSupabaseReady(),
+    supabaseServiceRole: hasServiceRoleKey(),
     paystack: !!config.payments.paystack.secretKey,
     billsProvider: config.bills.provider,
     erightVtu: !!config.bills.erightvtu.apiKey,

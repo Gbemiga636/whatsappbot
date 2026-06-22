@@ -5,11 +5,16 @@
 const { dataFile, safeReadJson, safeWriteJson } = require('./core/dataDir');
 const { getSupabase } = require('./db/supabase');
 const logger = require('./core/logger');
+const wallet = require('./wallet/walletService');
 
 const SESSIONS_FILE = dataFile('sessions.json');
 const SESSION_TTL_HOURS = 24;
 
 const cache = new Map();
+
+function phoneKey(phone) {
+  return wallet.normalizePhone(phone) || String(phone || '').replace(/\D/g, '');
+}
 
 function loadLocal() {
   return safeReadJson(SESSIONS_FILE, {});
@@ -43,6 +48,7 @@ function hydrateCache() {
 hydrateCache();
 
 async function persistSession(phone, session) {
+  const key = phoneKey(phone);
   const payload = {
     step: session.step || 'idle',
     active_service: session.activeService || null,
@@ -53,12 +59,12 @@ async function persistSession(phone, session) {
 
   const db = getSupabase();
   if (db) {
-    const { error } = await db.from('bot_sessions').upsert({ phone, ...payload });
-    if (error) logger.warn('Supabase setSession failed', { phone, error: error.message });
+    const { error } = await db.from('bot_sessions').upsert({ phone: key, ...payload });
+    if (error) logger.warn('Supabase setSession failed', { phone: key, error: error.message });
   }
 
   const sessions = loadLocal();
-  sessions[phone] = {
+  sessions[key] = {
     step: payload.step,
     activeService: payload.active_service,
     data: payload.data,
@@ -68,47 +74,51 @@ async function persistSession(phone, session) {
 }
 
 function getSession(phone) {
-  if (cache.has(phone)) return cache.get(phone);
-  const local = normalize(loadLocal()[phone]);
-  if (local) cache.set(phone, local);
+  const key = phoneKey(phone);
+  if (cache.has(key)) return cache.get(key);
+  const local = normalize(loadLocal()[key]);
+  if (local) cache.set(key, local);
   return local;
 }
 
 function setSession(phone, session) {
+  const key = phoneKey(phone);
   const normalized = {
     step: session.step || 'idle',
     activeService: session.activeService || null,
     data: session.data || {},
     updatedAt: new Date().toISOString(),
   };
-  cache.set(phone, normalized);
-  persistSession(phone, normalized).catch((err) =>
-    logger.warn('persistSession error', { phone, error: err.message })
+  cache.set(key, normalized);
+  persistSession(key, normalized).catch((err) =>
+    logger.warn('persistSession error', { phone: key, error: err.message })
   );
 }
 
 function clearSession(phone) {
-  cache.delete(phone);
+  const key = phoneKey(phone);
+  cache.delete(key);
   const db = getSupabase();
-  if (db) db.from('bot_sessions').delete().eq('phone', phone).then(() => {});
+  if (db) db.from('bot_sessions').delete().eq('phone', key).then(() => {});
   const sessions = loadLocal();
-  delete sessions[phone];
+  delete sessions[key];
   saveLocal(sessions);
 }
 
 async function loadSessionFromDb(phone) {
+  const key = phoneKey(phone);
   const db = getSupabase();
-  if (!db) return getSession(phone);
+  if (!db) return getSession(key);
 
   const { data, error } = await db
     .from('bot_sessions')
     .select('*')
-    .eq('phone', phone)
+    .eq('phone', key)
     .maybeSingle();
 
-  if (error || !data) return getSession(phone);
+  if (error || !data) return getSession(key);
   const session = normalize(data);
-  cache.set(phone, session);
+  cache.set(key, session);
   return session;
 }
 

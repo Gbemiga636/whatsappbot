@@ -38,4 +38,8 @@ function isSupabaseReady() {
   return ready && !!client;
 }
 
-module.exports = { getSupabase, isSupabaseReady, initSupabase };
+function hasServiceRoleKey() {
+  return !!config.supabase.serviceRoleKey;
+}
+
+module.exports = { getSupabase, isSupabaseReady, hasServiceRoleKey, initSupabase };

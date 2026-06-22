@@ -5,9 +5,14 @@
 const { dataFile, safeReadJson, safeWriteJson } = require('./core/dataDir');
 const { getSupabase } = require('./db/supabase');
 const logger = require('./core/logger');
+const wallet = require('./wallet/walletService');
 
 const USERS_FILE = dataFile('users.json');
 const cache = new Map();
+
+function phoneKey(phone) {
+  return wallet.normalizePhone(phone) || String(phone || '').replace(/\D/g, '');
+}
 
 function loadLocal() {
   return safeReadJson(USERS_FILE, {});
@@ -31,10 +36,11 @@ function hydrateCache() {
 hydrateCache();
 
 async function persistUser(phone, user) {
+  const key = phoneKey(phone);
   const db = getSupabase();
   if (db) {
     const row = {
-      phone,
+      phone: key,
       email: user.email,
       first_name: user.firstName,
       last_name: user.lastName,
@@ -53,29 +59,31 @@ async function persistUser(phone, user) {
   }
 
   const users = loadLocal();
-  users[phone] = user;
+  users[key] = { ...user, phone: key };
   saveLocal(users);
 }
 
 function getUser(phone) {
-  if (cache.has(phone)) return cache.get(phone);
-  const local = loadLocal()[phone] || null;
-  if (local) cache.set(phone, local);
+  const key = phoneKey(phone);
+  if (cache.has(key)) return cache.get(key);
+  const local = loadLocal()[key] || null;
+  if (local) cache.set(key, local);
   return local;
 }
 
 function setUser(phone, patch) {
-  const existing = getUser(phone) || { phone };
-  const merged = { ...existing, ...patch, phone, updatedAt: new Date().toISOString() };
-  cache.set(phone, merged);
-  persistUser(phone, merged).catch((err) =>
-    logger.warn('persistUser error', { phone, error: err.message })
+  const key = phoneKey(phone);
+  const existing = getUser(key) || { phone: key };
+  const merged = { ...existing, ...patch, phone: key, updatedAt: new Date().toISOString() };
+  cache.set(key, merged);
+  persistUser(key, merged).catch((err) =>
+    logger.warn('persistUser error', { phone: key, error: err.message })
   );
   return merged;
 }
 
 function isAuthenticated(phone) {
-  const u = getUser(phone);
+  const u = getUser(phoneKey(phone));
   return u?.authMode === 'authenticated' && !!u?.email;
 }
 
