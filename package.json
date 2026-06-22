@@ -10,6 +10,7 @@
     "test:supabase": "node scripts/test-supabase.js",
     "test:vtpass": "node scripts/test-vtpass.js",
     "test:erightvtu": "node scripts/test-erightvtu.js",
+    "test:provider": "node scripts/test-provider-success.js",
     "tunnel": "node scripts/tunnel.js",
     "setup-flows": "node scripts/setup-flows.js"
   },

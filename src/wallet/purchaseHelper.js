@@ -10,6 +10,7 @@ const config = require('../config');
 const pinGate = require('../security/pinGate');
 const telecom = require('../providers/telecomProvider');
 const { getSession } = require('../sessionStore');
+const { isProviderSuccessMessage } = require('../utils/providerSuccess');
 
 async function sendTopUpPrompt(phone, shortfall, context = '') {
   const amount = Math.max(Math.ceil(shortfall), 100);
@@ -150,10 +151,17 @@ async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute
 
   if (!purchase.ok) {
     if (notify) {
-      const refundNote = purchase.refunded ? '\n\n_Your wallet was refunded automatically._' : '';
-      await whatsapp.sendText(phone, `❌ ${purchase.message || 'Payment failed'}${refundNote}`);
+      if (isProviderSuccessMessage(purchase.message)) {
+        purchase.ok = true;
+        purchase.result = { ...(purchase.result || {}), message: purchase.message, pendingWebhook: true };
+      } else {
+        const refundNote = purchase.refunded ? '\n\n_Your wallet was refunded automatically._' : '';
+        await whatsapp.sendText(phone, `❌ ${purchase.message || 'Payment failed'}${refundNote}`);
+        return purchase;
+      }
+    } else {
+      return purchase;
     }
-    return purchase;
   }
 
   return purchase;

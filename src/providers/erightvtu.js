@@ -8,6 +8,7 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const config = require('../config');
+const { isProviderSuccessMessage } = require('../utils/providerSuccess');
 
 const API_ROOT = (config.bills.erightvtu.baseUrl || 'https://sabuss.com/vtu/api').replace(/\/$/, '');
 
@@ -90,16 +91,7 @@ function extractProviderText(data) {
 
 /** Sabuss/ERight often returns code 800 + "processed successfully… sent to Webhook" for async OK orders */
 function isProviderSuccessText(text) {
-  const t = String(text).toLowerCase();
-  if (!t) return false;
-  if (/invalid|failed|error|insufficient|denied|rejected|wrong pin|not found/i.test(t)) return false;
-  return (
-    /processed successfully/i.test(t) ||
-    /successfully processed/i.test(t) ||
-    /transaction successful/i.test(t) ||
-    /order is processed/i.test(t) ||
-    (/sent to webhook/i.test(t) && /success/i.test(t))
-  );
+  return isProviderSuccessMessage(text);
 }
 
 function parseSabussResponse(data) {

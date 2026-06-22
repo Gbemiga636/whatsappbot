@@ -8,6 +8,7 @@ const { getUser, setUser } = require('../userStore');
 const paystack = require('../providers/paystack');
 const config = require('../config');
 const logger = require('../core/logger');
+const { normalizeProviderResult } = require('../utils/providerSuccess');
 
 function generateRef(prefix = 'WLT') {
   return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
@@ -317,7 +318,7 @@ async function purchaseWithWallet(phone, { service, baseAmount, metadata = {}, e
 
   let result;
   try {
-    result = await execute();
+    result = normalizeProviderResult(await execute());
   } catch (err) {
     result = { ok: false, message: err.message };
   }

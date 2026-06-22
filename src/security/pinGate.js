@@ -4,6 +4,7 @@
 
 const transactionPin = require('./transactionPin');
 const pinPortal = require('./pinPortal');
+const { isProviderSuccessMessage } = require('../utils/providerSuccess');
 
 function isPinRequired() {
   const config = require('../config');
@@ -62,11 +63,14 @@ async function sendPurchaseResult(phone, pending, purchase) {
   if (purchase?.paymentMethod === 'credit') return;
 
   if (!purchase?.ok) {
-    if (!purchase?.offeredCredit && !purchase?.prompted) {
+    if (isProviderSuccessMessage(purchase?.message)) {
+      purchase.ok = true;
+      purchase.pendingWebhook = /webhook/i.test(String(purchase.message || ''));
+    } else if (!purchase?.offeredCredit && !purchase?.prompted) {
       const refundNote = purchase?.refunded ? '\n\n_Your wallet was refunded._' : '';
       await whatsapp.sendText(phone, `❌ ${purchase?.message || 'Payment failed'}${refundNote}`);
     }
-    return;
+    if (!purchase?.ok) return;
   }
 
   if (pending.service === 'airtime') {
