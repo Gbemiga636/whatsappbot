@@ -5,6 +5,7 @@
 const transactionPin = require('./transactionPin');
 const pinPortal = require('./pinPortal');
 const { isProviderSuccessMessage } = require('../utils/providerSuccess');
+const crypto = require('crypto');
 
 function isPinRequired() {
   const config = require('../config');
@@ -12,6 +13,9 @@ function isPinRequired() {
 }
 
 async function guardPurchase(phone, pending) {
+  const purchaseId = pending.purchaseId || `PUR_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  pending = { ...pending, purchaseId };
+
   if (!isPinRequired()) {
     const { executePendingPurchase } = require('../wallet/purchaseHelper');
     return executePendingPurchase(phone, pending);
@@ -37,9 +41,20 @@ async function guardPurchase(phone, pending) {
 
 async function resumePendingPurchase(phone, pending) {
   if (!pending) return;
+
   const { executePendingPurchase } = require('../wallet/purchaseHelper');
   const { setSession, getSession } = require('../sessionStore');
   const session = getSession(phone) || {};
+
+  // Prevent double-charge / double-refund if PIN page is submitted twice
+  setSession(phone, {
+    ...session,
+    data: {
+      ...session.data,
+      pendingPurchase: null,
+    },
+  });
+
   const purchase = await executePendingPurchase(phone, pending);
   await sendPurchaseResult(phone, pending, purchase);
 
@@ -63,14 +78,33 @@ async function sendPurchaseResult(phone, pending, purchase) {
   if (purchase?.paymentMethod === 'credit') return;
 
   if (!purchase?.ok) {
-    if (isProviderSuccessMessage(purchase?.message)) {
-      purchase.ok = true;
-      purchase.pendingWebhook = /webhook/i.test(String(purchase.message || ''));
-    } else if (!purchase?.offeredCredit && !purchase?.prompted) {
-      const refundNote = purchase?.refunded ? '\n\n_Your wallet was refunded._' : '';
-      await whatsapp.sendText(phone, `❌ ${purchase?.message || 'Payment failed'}${refundNote}`);
+    if (purchase?.inProgress || purchase?.pending) {
+      await whatsapp.sendText(phone, `⏳ ${purchase.message || 'Payment is processing. Please wait.'}`);
+      return;
     }
-    if (!purchase?.ok) return;
+    if (isProviderSuccessMessage(purchase?.message) && purchase?.refunded) {
+      const pricing = wallet.calculateWithCommission(pending.baseAmount);
+      const debit = await wallet.debitWallet(phone, pricing.total, {
+        reference: `FIX_${purchase.reference || Date.now()}`,
+        service: pending.service,
+        metadata: { type: 'clawback_fix', reason: 'erroneous_refund' },
+      });
+      if (debit.ok) {
+        purchase.ok = true;
+        purchase.refunded = false;
+        purchase.balance = debit.balance;
+        purchase.total = pricing.total;
+        purchase.commission = pricing.commission;
+        purchase.base = pricing.base;
+      }
+    }
+    if (!purchase?.ok) {
+      if (!purchase?.offeredCredit && !purchase?.prompted) {
+        const refundNote = purchase?.refunded ? '\n\n_Your wallet was refunded._' : '';
+        await whatsapp.sendText(phone, `❌ ${purchase?.message || 'Payment failed'}${refundNote}`);
+      }
+      return;
+    }
   }
 
   if (pending.service === 'airtime') {

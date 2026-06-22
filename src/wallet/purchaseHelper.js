@@ -10,7 +10,6 @@ const config = require('../config');
 const pinGate = require('../security/pinGate');
 const telecom = require('../providers/telecomProvider');
 const { getSession } = require('../sessionStore');
-const { isProviderSuccessMessage } = require('../utils/providerSuccess');
 
 async function sendTopUpPrompt(phone, shortfall, context = '') {
   const amount = Math.max(Math.ceil(shortfall), 100);
@@ -115,18 +114,32 @@ async function executePendingPurchase(phone, pending) {
   }
 
   if (method === 'credit') {
-    return _confirmAndPayWithCredit(phone, { service, baseAmount, summaryText, execute, notify: false });
+    return _confirmAndPayWithCredit(phone, {
+      service,
+      baseAmount,
+      summaryText,
+      execute,
+      notify: false,
+      purchaseId: pending.purchaseId,
+    });
   }
-  return _confirmAndPay(phone, { service, baseAmount, summaryText, execute, notify: false });
+  return _confirmAndPay(phone, {
+    service,
+    baseAmount,
+    summaryText,
+    execute,
+    notify: false,
+    purchaseId: pending.purchaseId,
+  });
 }
 
-async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute, notify = true }) {
+async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute, notify = true, purchaseId }) {
   const pricing = wallet.formatWalletSummary(baseAmount);
 
   const purchase = await wallet.purchaseWithWallet(phone, {
     service,
     baseAmount,
-    metadata: { provider: service },
+    metadata: { provider: service, purchaseId },
     execute,
   });
 
@@ -151,17 +164,15 @@ async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute
 
   if (!purchase.ok) {
     if (notify) {
-      if (isProviderSuccessMessage(purchase.message)) {
-        purchase.ok = true;
-        purchase.result = { ...(purchase.result || {}), message: purchase.message, pendingWebhook: true };
-      } else {
-        const refundNote = purchase.refunded ? '\n\n_Your wallet was refunded automatically._' : '';
-        await whatsapp.sendText(phone, `❌ ${purchase.message || 'Payment failed'}${refundNote}`);
+      if (purchase.inProgress || purchase.pending) {
+        await whatsapp.sendText(phone, `⏳ ${purchase.message || 'Payment is processing.'}`);
         return purchase;
       }
-    } else {
+      const refundNote = purchase.refunded ? '\n\n_Your wallet was refunded automatically._' : '';
+      await whatsapp.sendText(phone, `❌ ${purchase.message || 'Payment failed'}${refundNote}`);
       return purchase;
     }
+    return purchase;
   }
 
   return purchase;

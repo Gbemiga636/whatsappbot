@@ -8,7 +8,8 @@ const { getUser, setUser } = require('../userStore');
 const paystack = require('../providers/paystack');
 const config = require('../config');
 const logger = require('../core/logger');
-const { normalizeProviderResult } = require('../utils/providerSuccess');
+const { normalizeProviderResult, isProviderSuccessMessage } = require('../utils/providerSuccess');
+const { withWalletLock } = require('./walletLock');
 
 function generateRef(prefix = 'WLT') {
   return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
@@ -79,65 +80,206 @@ async function addLedgerEntry(phone, { type, amount, balanceAfter, reference, se
   }
 }
 
+async function ledgerEntryExists(reference, type) {
+  const db = getSupabase();
+  if (!db || !reference) return false;
+  const { data } = await db
+    .from('wallet_ledger')
+    .select('id')
+    .eq('reference', reference)
+    .eq('type', type)
+    .maybeSingle();
+  return !!data;
+}
+
+async function tryRpcDebit(phone, amount) {
+  const db = getSupabase();
+  if (!db) return null;
+  try {
+    const { data, error } = await db.rpc('wallet_debit', {
+      p_phone: normalizePhone(phone),
+      p_amount: Number(amount),
+    });
+    if (error) {
+      if (/wallet_debit|42883|does not exist/i.test(error.message || '')) return null;
+      logger.warn('wallet_debit RPC failed', { error: error.message });
+      return null;
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return null;
+    return { ok: !!row.ok, balance: Number(row.new_balance) };
+  } catch {
+    return null;
+  }
+}
+
+async function tryRpcCredit(phone, amount) {
+  const db = getSupabase();
+  if (!db) return null;
+  try {
+    const { data, error } = await db.rpc('wallet_credit', {
+      p_phone: normalizePhone(phone),
+      p_amount: Number(amount),
+    });
+    if (error) {
+      if (/wallet_credit|42883|does not exist/i.test(error.message || '')) return null;
+      logger.warn('wallet_credit RPC failed', { error: error.message });
+      return null;
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return null;
+    return { ok: !!row.ok, balance: Number(row.new_balance) };
+  } catch {
+    return null;
+  }
+}
+
+async function claimPurchaseTransaction(phone, reference, { service, total, metadata }) {
+  const db = getSupabase();
+  if (!db || !metadata?.purchaseId) return { ok: true };
+
+  const { data: existing } = await db
+    .from('transactions')
+    .select('status')
+    .eq('reference', reference)
+    .maybeSingle();
+
+  if (existing?.status === 'completed') {
+    return { ok: false, alreadyCompleted: true };
+  }
+  if (existing?.status === 'refunded') {
+    return { ok: false, alreadyRefunded: true };
+  }
+  if (existing?.status === 'processing') {
+    return { ok: false, inProgress: true };
+  }
+
+  const { error } = await db.from('transactions').insert({
+    phone: normalizePhone(phone),
+    service,
+    type: metadata.type || 'purchase',
+    amount: total,
+    status: 'processing',
+    reference,
+    provider: metadata.provider || service,
+    metadata: { ...metadata },
+  });
+
+  if (error?.code === '23505') {
+    const { data: row } = await db.from('transactions').select('status').eq('reference', reference).maybeSingle();
+    if (row?.status === 'completed') return { ok: false, alreadyCompleted: true };
+    if (row?.status === 'refunded') return { ok: false, alreadyRefunded: true };
+    return { ok: false, inProgress: true };
+  }
+
+  return { ok: true };
+}
+
+async function updatePurchaseTransaction(reference, status, extra = {}) {
+  const db = getSupabase();
+  if (!db || !reference) return;
+  await db
+    .from('transactions')
+    .update({ status, updated_at: new Date().toISOString(), ...extra })
+    .eq('reference', reference);
+}
+
 async function creditWallet(phone, amount, { reference, service, metadata = {} } = {}) {
   const credit = Number(amount);
   if (credit <= 0) return { ok: false, message: 'Invalid amount' };
 
-  const current = await getBalance(phone);
-  const newBalance = current + credit;
-  await setBalance(phone, newBalance);
+  const entryType = metadata.type || 'topup';
+  if (reference && (entryType === 'refund' || entryType === 'topup' || entryType === 'topup_gift')) {
+    const exists = await ledgerEntryExists(reference, entryType === 'refund' ? 'refund' : entryType);
+    if (exists) {
+      const balance = await getBalance(phone);
+      return { ok: true, balance, credited: 0, alreadyProcessed: true };
+    }
+  }
 
-  await addLedgerEntry(phone, {
-    type: metadata.type || 'topup',
-    amount: credit,
-    balanceAfter: newBalance,
-    reference,
-    service,
-    metadata,
+  return withWalletLock(normalizePhone(phone), async () => {
+    const rpc = await tryRpcCredit(phone, credit);
+    let newBalance;
+    if (rpc?.ok) {
+      newBalance = rpc.balance;
+      setUser(phone, { walletBalance: newBalance });
+    } else {
+      const current = await getBalance(phone);
+      newBalance = current + credit;
+      await setBalance(phone, newBalance);
+    }
+
+    await addLedgerEntry(phone, {
+      type: entryType,
+      amount: credit,
+      balanceAfter: newBalance,
+      reference,
+      service,
+      metadata,
+    });
+
+    logger.info('Wallet credited', { phone, amount: credit, balance: newBalance, reference, type: entryType });
+    return { ok: true, balance: newBalance, credited: credit };
   });
-
-  logger.info('Wallet credited', { phone, amount: credit, balance: newBalance });
-  return { ok: true, balance: newBalance, credited: credit };
 }
 
 async function debitWallet(phone, totalAmount, { baseAmount, commission, reference, service, metadata = {} } = {}) {
   const total = Number(totalAmount);
-  const current = await getBalance(phone);
+  if (!total || total <= 0) return { ok: false, message: 'Invalid amount' };
 
-  if (current < total) {
-    return {
-      ok: false,
-      insufficient: true,
-      balance: current,
-      required: total,
-      shortfall: total - current,
-    };
-  }
+  return withWalletLock(normalizePhone(phone), async () => {
+    const rpc = await tryRpcDebit(phone, total);
+    let newBalance;
 
-  const newBalance = current - total;
-  await setBalance(phone, newBalance);
+    if (rpc) {
+      if (!rpc.ok) {
+        return {
+          ok: false,
+          insufficient: true,
+          balance: rpc.balance,
+          required: total,
+          shortfall: total - rpc.balance,
+        };
+      }
+      newBalance = rpc.balance;
+      setUser(phone, { walletBalance: newBalance });
+    } else {
+      const current = await getBalance(phone);
+      if (current < total) {
+        return {
+          ok: false,
+          insufficient: true,
+          balance: current,
+          required: total,
+          shortfall: total - current,
+        };
+      }
+      newBalance = current - total;
+      await setBalance(phone, newBalance);
+    }
 
-  await addLedgerEntry(phone, {
-    type: 'debit',
-    amount: -total,
-    balanceAfter: newBalance,
-    reference,
-    service,
-    metadata: { ...metadata, baseAmount, commission, mysogiCommission: commission },
-  });
-
-  if (commission > 0) {
     await addLedgerEntry(phone, {
-      type: 'commission',
-      amount: commission,
+      type: 'debit',
+      amount: -total,
       balanceAfter: newBalance,
       reference,
-      service: 'mysogi',
-      metadata: { parentService: service, baseAmount },
+      service,
+      metadata: { ...metadata, baseAmount, commission, mysogiCommission: commission },
     });
-  }
 
-  return { ok: true, balance: newBalance, debited: total, commission };
+    if (commission > 0) {
+      await addLedgerEntry(phone, {
+        type: 'commission',
+        amount: commission,
+        balanceAfter: newBalance,
+        reference,
+        service: 'mysogi',
+        metadata: { parentService: service, baseAmount },
+      });
+    }
+
+    return { ok: true, balance: newBalance, debited: total, commission };
+  });
 }
 
 function formatNaira(amount) {
@@ -290,8 +432,15 @@ async function processTopUpWebhook(reference, paidAmount) {
 }
 
 async function purchaseWithWallet(phone, { service, baseAmount, metadata = {}, execute }) {
+  const normPhone = normalizePhone(phone);
   const { base, commission, total } = calculateWithCommission(baseAmount);
-  const balance = await getBalance(phone);
+
+  if (total <= 0) {
+    return { ok: false, message: 'Invalid purchase amount' };
+  }
+
+  const reference = metadata.purchaseId || generateRef(service.toUpperCase().slice(0, 4));
+  const balance = await getBalance(normPhone);
 
   if (balance < total) {
     return {
@@ -305,8 +454,42 @@ async function purchaseWithWallet(phone, { service, baseAmount, metadata = {}, e
     };
   }
 
-  const reference = generateRef(service.toUpperCase().slice(0, 4));
-  const debit = await debitWallet(phone, total, {
+  const claim = await claimPurchaseTransaction(normPhone, reference, {
+    service,
+    total,
+    metadata: { ...metadata, baseAmount: base, commission },
+  });
+
+  if (claim.alreadyCompleted) {
+    return {
+      ok: true,
+      alreadyProcessed: true,
+      reference,
+      balance: await getBalance(normPhone),
+      base,
+      commission,
+      total,
+    };
+  }
+  if (claim.inProgress) {
+    return {
+      ok: false,
+      inProgress: true,
+      message: 'This payment is already processing. Please wait a moment.',
+      balance: await getBalance(normPhone),
+    };
+  }
+  if (claim.alreadyRefunded) {
+    return {
+      ok: false,
+      refunded: true,
+      message: 'This payment was already refunded.',
+      reference,
+      balance: await getBalance(normPhone),
+    };
+  }
+
+  const debit = await debitWallet(normPhone, total, {
     baseAmount: base,
     commission,
     reference,
@@ -320,31 +503,81 @@ async function purchaseWithWallet(phone, { service, baseAmount, metadata = {}, e
   try {
     result = normalizeProviderResult(await execute());
   } catch (err) {
-    result = { ok: false, message: err.message };
+    const msg = err.message || 'Provider error';
+    const maybeProcessed = /timeout|econnaborted|etimedout|network error|socket hang up/i.test(msg);
+    result = { ok: false, message: msg, maybeProcessed };
+  }
+
+  if (!result.ok && isProviderSuccessMessage(result.message)) {
+    result = {
+      ...result,
+      ok: true,
+      pendingWebhook: /webhook/i.test(String(result.message || '')),
+    };
   }
 
   if (!result.ok) {
-    logger.warn('Purchase provider failed', { phone, service, reference, reason: result.message });
-    await creditWallet(phone, total, {
+    logger.warn('Purchase provider failed', { phone: normPhone, service, reference, reason: result.message });
+
+    if (result.maybeProcessed) {
+      await updatePurchaseTransaction(reference, 'processing', {
+        metadata: { ...metadata, baseAmount: base, commission, uncertain: true, reason: result.message },
+      });
+      return {
+        ok: false,
+        pending: true,
+        message:
+          'Your payment was received but delivery is still confirming. ' +
+          'Check your line before retrying — your wallet was not refunded.',
+        reference,
+        balance: debit.balance,
+        base,
+        commission,
+        total,
+      };
+    }
+
+    const refund = await creditWallet(normPhone, total, {
       reference: `REFUND_${reference}`,
       service,
       metadata: { type: 'refund', originalRef: reference, reason: result.message },
     });
-    return { ok: false, refunded: true, message: result.message || 'Purchase failed — wallet refunded' };
+
+    await updatePurchaseTransaction(reference, 'refunded', {
+      metadata: { ...metadata, baseAmount: base, commission, reason: result.message },
+    });
+
+    return {
+      ok: false,
+      refunded: (refund.credited || 0) > 0 || refund.alreadyProcessed,
+      message: result.message || 'Purchase failed — wallet refunded',
+      reference,
+      balance: refund.balance ?? debit.balance,
+      base,
+      commission,
+      total,
+    };
   }
 
   const db = getSupabase();
   if (db) {
-    await db.from('transactions').insert({
-      phone,
-      service,
-      type: metadata.type || 'purchase',
-      amount: total,
-      status: 'completed',
-      reference,
-      provider: metadata.provider || service,
-      metadata: { ...metadata, baseAmount: base, commission, mysogiCommission: commission },
-    });
+    if (metadata.purchaseId) {
+      await updatePurchaseTransaction(reference, 'completed', {
+        provider: metadata.provider || service,
+        metadata: { ...metadata, baseAmount: base, commission, mysogiCommission: commission },
+      });
+    } else {
+      await db.from('transactions').insert({
+        phone: normPhone,
+        service,
+        type: metadata.type || 'purchase',
+        amount: total,
+        status: 'completed',
+        reference,
+        provider: metadata.provider || service,
+        metadata: { ...metadata, baseAmount: base, commission, mysogiCommission: commission },
+      });
+    }
   }
 
   return {
