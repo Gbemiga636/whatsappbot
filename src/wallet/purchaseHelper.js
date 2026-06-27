@@ -92,8 +92,10 @@ async function executePendingPurchase(phone, pending) {
   const { method, service, baseAmount, summaryText } = pending;
 
   let execute;
+  const airtime = pending.snapshot?.airtime || session.data?.airtime;
+  const bill = pending.snapshot?.bill || session.data?.bill;
+
   if (service === 'airtime') {
-    const airtime = session.data?.airtime;
     if (!airtime) return { ok: false, message: 'Airtime session expired. Start again.' };
     execute = () =>
       telecom.purchaseAirtime({
@@ -102,9 +104,9 @@ async function executePendingPurchase(phone, pending) {
         amount: airtime.amount || baseAmount,
         type: airtime.type,
         plan: airtime.value,
+        resolvedPlan: airtime.resolvedPlan,
       });
   } else if (service === 'bills') {
-    const bill = session.data?.bill;
     if (!bill) return { ok: false, message: 'Bill session expired. Start again.' };
     execute = () => telecom.payBill({ ...bill, phone });
   } else if (service === 'partners') {
@@ -144,7 +146,19 @@ async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute
   });
 
   if (purchase.insufficient) {
-    if (config.credit.enabled) {
+    const pricing = wallet.formatWalletSummary(baseAmount);
+    if (notify) {
+      await whatsapp.sendText(
+        phone,
+        `💳 *Not enough balance*\n\n` +
+          `${summaryText}\n\n` +
+          `${pricing.text}\n\n` +
+          `Your balance: *${wallet.formatNaira(purchase.balance)}*\n` +
+          `You need: *${wallet.formatNaira(purchase.shortfall)}* more\n\n` +
+          `_The total includes a small Mysogi service fee._`
+      );
+    }
+    if (config.credit.enabled && purchase.shortfall > 0) {
       return offerCreditOrTopUp(phone, {
         shortfall: purchase.shortfall,
         baseAmount,
@@ -153,13 +167,8 @@ async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute
         execute,
       });
     }
-    if (notify) {
-      await whatsapp.sendText(
-        phone,
-        `*${summaryText}*\n\n${pricing.text}\n\nYour balance: ${wallet.formatNaira(purchase.balance)}\nShort by: ${wallet.formatNaira(purchase.shortfall)}`
-      );
-    }
-    return sendTopUpPrompt(phone, purchase.shortfall, service);
+    if (notify) return sendTopUpPrompt(phone, purchase.shortfall, service);
+    return purchase;
   }
 
   if (!purchase.ok) {

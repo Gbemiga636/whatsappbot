@@ -107,7 +107,8 @@ async function promptVerifyPin(phone, pendingPurchase) {
 }
 
 async function promptChangePin(phone) {
-  if (!transactionPin.isPinSet(phone)) {
+  await transactionPin.ensurePinLoaded(phone);
+  if (!(await transactionPin.isPinSetAsync(phone))) {
     return promptSetPin(phone, {});
   }
 

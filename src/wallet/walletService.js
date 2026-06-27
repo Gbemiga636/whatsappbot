@@ -25,37 +25,61 @@ function calculateWithCommission(baseAmount) {
 }
 
 async function getBalance(phone) {
+  const key = normalizePhone(phone);
   const db = getSupabase();
   if (!db) {
-    const user = getUser(phone);
+    const user = getUser(key);
     return Number(user?.walletBalance || 0);
   }
 
   const { data, error } = await db
     .from('whatsapp_users')
-    .select('wallet_balance')
-    .eq('phone', phone)
+    .select('wallet_balance, metadata')
+    .eq('phone', key)
     .maybeSingle();
 
   if (error || !data) {
-    const user = getUser(phone);
+    const user = getUser(key);
     return Number(user?.walletBalance || 0);
   }
 
   const balance = Number(data.wallet_balance || 0);
-  setUser(phone, { walletBalance: balance });
+  const user = getUser(key) || { phone: key };
+  setUser(key, {
+    ...user,
+    walletBalance: balance,
+    metadata: { ...(user.metadata || {}), ...(data.metadata || {}) },
+  });
   return balance;
 }
 
+/** Force-sync wallet + metadata from DB (fixes stale balance after restart) */
+async function refreshWalletFromDb(phone) {
+  return getBalance(phone);
+}
+
+async function canAffordPurchase(phone, baseAmount) {
+  const pricing = calculateWithCommission(baseAmount);
+  const balance = await refreshWalletFromDb(phone);
+  const shortfall = Math.max(0, pricing.total - balance);
+  return {
+    ok: balance >= pricing.total,
+    balance,
+    shortfall,
+    ...pricing,
+  };
+}
+
 async function setBalance(phone, balance) {
+  const key = normalizePhone(phone);
   const db = getSupabase();
   if (db) {
     await db
       .from('whatsapp_users')
       .update({ wallet_balance: balance, updated_at: new Date().toISOString() })
-      .eq('phone', phone);
+      .eq('phone', key);
   }
-  setUser(phone, { walletBalance: balance });
+  setUser(key, { walletBalance: balance });
   return balance;
 }
 
@@ -423,7 +447,108 @@ async function processTopUpWebhook(reference, paidAmount) {
     isGift,
     balance: credit.balance,
     amount: paidAmount,
+    alreadyProcessed: false,
   };
+}
+
+async function wasTopUpWhatsAppNotified(reference) {
+  const db = getSupabase();
+  if (!db) return false;
+  const { data: tx } = await db.from('transactions').select('metadata').eq('reference', reference).maybeSingle();
+  return !!tx?.metadata?.whatsapp_notified;
+}
+
+async function markTopUpWhatsAppNotified(reference) {
+  const db = getSupabase();
+  if (!db) return;
+  const { data: tx } = await db.from('transactions').select('metadata').eq('reference', reference).maybeSingle();
+  await db
+    .from('transactions')
+    .update({
+      metadata: { ...(tx?.metadata || {}), whatsapp_notified: true },
+      updated_at: new Date().toISOString(),
+    })
+    .eq('reference', reference);
+}
+
+async function notifyWalletTopUpSuccess({ phone, payerPhone, amount, balance, reference, isGift, creditRepaid }) {
+  const whatsapp = require('../whatsapp');
+  const normBeneficiary = normalizePhone(phone);
+  const normPayer = normalizePhone(payerPhone || phone);
+
+  try {
+    if (isGift && normPayer && normPayer !== normBeneficiary) {
+      await whatsapp.sendText(
+        normPayer,
+        `✅ *Gift sent!*\n\n` +
+          `${formatNaira(amount)} sent to *${formatPhoneDisplay(normBeneficiary)}*\n` +
+          `Ref: *${reference}*`
+      );
+      await whatsapp.sendText(
+        normBeneficiary,
+        `🎁 *You received wallet credit!*\n\n` +
+          `+${formatNaira(amount)}\n` +
+          `New balance: *${formatNaira(balance)}*\n\n` +
+          `Someone topped up your Mysogi wallet.\nType *menu* to start using it.`
+      );
+    } else if (normBeneficiary) {
+      let msg =
+        `✅ *Wallet topped up!*\n\n` +
+        `+${formatNaira(amount)}\n` +
+        `New balance: *${formatNaira(balance)}*`;
+      if (creditRepaid) {
+        msg += `\n\n💳 Credit repaid: ${formatNaira(creditRepaid)}`;
+      }
+      msg += `\n\nType *menu* to continue.`;
+      await whatsapp.sendText(normBeneficiary, msg);
+    }
+    if (reference) await markTopUpWhatsAppNotified(reference);
+    return true;
+  } catch (err) {
+    logger.warn('Wallet top-up WhatsApp notify failed', { phone: normBeneficiary, error: err.message });
+    return false;
+  }
+}
+
+/** Fallback when Paystack webhook credited wallet but WhatsApp notify was missed */
+async function tryCompletePendingTopUp(phone) {
+  const { getSession, setSession } = require('../sessionStore');
+  const session = getSession(phone) || {};
+  const reference = session.data?.pendingTopUp;
+  if (!reference) return false;
+
+  const verify = await paystack.verifyPayment(reference);
+  if (!verify.ok) return false;
+
+  const result = await processTopUpWebhook(reference, verify.amount);
+  if (!result.ok) return false;
+
+  const alreadyNotified = await wasTopUpWhatsAppNotified(reference);
+  if (!alreadyNotified) {
+    if (!result.alreadyProcessed && result.phone) {
+      const credit = require('../credit/creditService');
+      const repay = await credit.autoRepayOnTopUp(result.phone);
+      if (repay?.repaid > 0) {
+        result.balance = repay.balance;
+        result.creditRepaid = repay.repaid;
+      }
+    }
+    await notifyWalletTopUpSuccess({
+      phone: result.phone,
+      payerPhone: result.payerPhone,
+      amount: verify.amount,
+      balance: result.balance,
+      reference,
+      isGift: result.isGift,
+      creditRepaid: result.creditRepaid,
+    });
+  }
+
+  setSession(phone, {
+    ...session,
+    data: { ...session.data, pendingTopUp: null },
+  });
+  return !alreadyNotified;
 }
 
 async function purchaseWithWallet(phone, { service, baseAmount, metadata = {}, execute }) {
@@ -435,7 +560,7 @@ async function purchaseWithWallet(phone, { service, baseAmount, metadata = {}, e
   }
 
   const reference = metadata.purchaseId || generateRef(service.toUpperCase().slice(0, 4));
-  const balance = await getBalance(normPhone);
+  const balance = await refreshWalletFromDb(normPhone);
 
   if (balance < total) {
     return {
@@ -601,10 +726,16 @@ function formatWalletSummary(baseAmount) {
 
 module.exports = {
   getBalance,
+  refreshWalletFromDb,
+  canAffordPurchase,
   creditWallet,
   debitWallet,
   initiateTopUp,
   processTopUpWebhook,
+  notifyWalletTopUpSuccess,
+  tryCompletePendingTopUp,
+  wasTopUpWhatsAppNotified,
+  markTopUpWhatsAppNotified,
   purchaseWithWallet,
   calculateWithCommission,
   formatWalletSummary,

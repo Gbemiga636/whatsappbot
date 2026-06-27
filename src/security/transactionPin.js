@@ -1,5 +1,6 @@
 /**
  * Transaction PIN — hashed storage, lockout, verification.
+ * PIN is stored in Supabase metadata and survives server restarts.
  */
 
 const crypto = require('crypto');
@@ -20,8 +21,39 @@ function getPinRecord(phone) {
   return user?.metadata?.transaction_pin || null;
 }
 
+/** Load PIN (and wallet) from DB into memory — call after cold start */
+async function ensurePinLoaded(phone) {
+  const normalized = normalizePhone(phone);
+  if (getPinRecord(normalized)?.hash) return true;
+
+  const db = getSupabase();
+  if (!db) return !!getPinRecord(normalized)?.hash;
+
+  const { data, error } = await db
+    .from('whatsapp_users')
+    .select('metadata, wallet_balance')
+    .eq('phone', normalized)
+    .maybeSingle();
+
+  if (error || !data) return false;
+
+  const user = getUser(normalized) || { phone: normalized };
+  setUser(normalized, {
+    ...user,
+    walletBalance: data.wallet_balance ?? user.walletBalance ?? 0,
+    metadata: { ...(user.metadata || {}), ...(data.metadata || {}) },
+  });
+
+  return !!data.metadata?.transaction_pin?.hash;
+}
+
 function isPinSet(phone) {
   return !!getPinRecord(phone)?.hash;
+}
+
+async function isPinSetAsync(phone) {
+  if (isPinSet(phone)) return true;
+  return ensurePinLoaded(phone);
 }
 
 function isLocked(phone) {
@@ -62,16 +94,32 @@ async function savePinRecord(phone, record) {
   setUser(normalized, { metadata });
 
   const db = getSupabase();
-  if (db) {
-    const { error } = await db.from('whatsapp_users').upsert(
-      {
-        phone: normalized,
-        metadata,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'phone' }
-    );
-    if (error) logger.warn('Supabase savePinRecord failed', { phone: normalized, error: error.message });
+  if (!db) return;
+
+  const { data: existing } = await db
+    .from('whatsapp_users')
+    .select('metadata, wallet_balance, auth_mode, email, first_name, last_name')
+    .eq('phone', normalized)
+    .maybeSingle();
+
+  const mergedMetadata = { ...(existing?.metadata || {}), transaction_pin: record };
+
+  const row = {
+    phone: normalized,
+    metadata: mergedMetadata,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existing) {
+    const { error } = await db.from('whatsapp_users').update(row).eq('phone', normalized);
+    if (error) logger.warn('Supabase savePinRecord update failed', { phone: normalized, error: error.message });
+  } else {
+    const { error } = await db.from('whatsapp_users').insert({
+      ...row,
+      auth_mode: user.authMode || 'guest',
+      wallet_balance: user.walletBalance || 0,
+    });
+    if (error) logger.warn('Supabase savePinRecord insert failed', { phone: normalized, error: error.message });
   }
 }
 
@@ -96,6 +144,7 @@ async function setPin(phone, pin) {
 
 async function verifyPin(phone, pin) {
   const normalized = normalizePhone(phone);
+  await ensurePinLoaded(normalized);
 
   if (isLocked(normalized)) {
     return {
@@ -160,6 +209,8 @@ function maskProgress(count) {
 module.exports = {
   PIN_LENGTH,
   isPinSet,
+  isPinSetAsync,
+  ensurePinLoaded,
   isLocked,
   lockoutRemainingMinutes,
   setPin,

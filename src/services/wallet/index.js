@@ -21,8 +21,8 @@ class WalletService extends BaseService {
   async showMenu(ctx) {
     if (!(await this.ensureAuth(ctx))) return;
 
-    const balance = await wallet.getBalance(ctx.phone);
-    const pinSet = transactionPin.isPinSet(ctx.phone);
+    const balance = await wallet.refreshWalletFromDb(ctx.phone);
+    const pinSet = await transactionPin.isPinSetAsync(ctx.phone);
     const rows = [
       { id: 'wallet_topup_self', title: '➕ Top up for me', description: 'Add to my balance' },
       { id: 'wallet_topup_other', title: '🎁 For someone else', description: 'Top up their wallet' },
@@ -188,7 +188,7 @@ class WalletService extends BaseService {
     } else {
       await this.reply(
         payerPhone,
-        `*Top up ${wallet.formatNaira(amount)}*\n\nTap below to pay with Paystack.\nYour wallet updates automatically after payment.`
+        `*Top up ${wallet.formatNaira(amount)}*\n\nTap below to pay with Paystack.\nYour wallet updates automatically after payment.\n\n_If you don't get a confirmation, send any message here after paying._`
       );
     }
 

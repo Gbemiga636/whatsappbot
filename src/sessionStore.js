@@ -85,7 +85,7 @@ function setSession(phone, session) {
   const key = phoneKey(phone);
   const normalized = {
     step: session.step || 'idle',
-    activeService: session.activeService || null,
+    activeService: session.activeService ?? null,
     data: session.data || {},
     updatedAt: new Date().toISOString(),
   };
@@ -93,6 +93,15 @@ function setSession(phone, session) {
   persistSession(key, normalized).catch((err) =>
     logger.warn('persistSession error', { phone: key, error: err.message })
   );
+  return normalized;
+}
+
+/** Persist session immediately — use before user taps a list/button */
+async function setSessionAndWait(phone, session) {
+  const normalized = setSession(phone, session);
+  const key = phoneKey(phone);
+  await persistSession(key, normalized);
+  return normalized;
 }
 
 function clearSession(phone) {
@@ -107,8 +116,9 @@ function clearSession(phone) {
 
 async function loadSessionFromDb(phone) {
   const key = phoneKey(phone);
+  const cached = getSession(key);
   const db = getSupabase();
-  if (!db) return getSession(key);
+  if (!db) return cached;
 
   const { data, error } = await db
     .from('bot_sessions')
@@ -116,10 +126,17 @@ async function loadSessionFromDb(phone) {
     .eq('phone', key)
     .maybeSingle();
 
-  if (error || !data) return getSession(key);
-  const session = normalize(data);
-  cache.set(key, session);
-  return session;
+  if (error || !data) return cached;
+
+  const fromDb = normalize(data);
+  if (cached?.updatedAt && fromDb.updatedAt) {
+    const cacheTs = new Date(cached.updatedAt).getTime();
+    const dbTs = new Date(fromDb.updatedAt).getTime();
+    if (cacheTs >= dbTs) return cached;
+  }
+
+  cache.set(key, fromDb);
+  return fromDb;
 }
 
-module.exports = { getSession, setSession, clearSession, loadSessionFromDb };
+module.exports = { getSession, setSession, setSessionAndWait, clearSession, loadSessionFromDb };

@@ -6,7 +6,6 @@ const crypto = require('crypto');
 const config = require('../config');
 const paystack = require('../providers/paystack');
 const wallet = require('../wallet/walletService');
-const whatsapp = require('../whatsapp');
 const logger = require('../core/logger');
 
 function verifySignature(rawBody, signature) {
@@ -32,7 +31,6 @@ async function handlePaystackWebhook(req, res) {
     const data = event.data;
     const reference = data.reference;
     const amount = (data.amount || 0) / 100;
-    const phone = data.metadata?.phone;
 
     const verify = await paystack.verifyPayment(reference);
     if (!verify.ok) {
@@ -50,35 +48,25 @@ async function handlePaystackWebhook(req, res) {
       }
     }
 
-    if (result.ok && !result.alreadyProcessed) {
-      try {
-        if (result.isGift && result.payerPhone && result.payerPhone !== result.phone) {
-          await whatsapp.sendText(
-            result.payerPhone,
-            `✅ *Gift sent!*\n\n` +
-              `${wallet.formatNaira(amount)} sent to *${wallet.formatPhoneDisplay(result.phone)}*\n` +
-              `Ref: *${reference}*`
-          );
-          await whatsapp.sendText(
-            result.phone,
-            `🎁 *You received wallet credit!*\n\n` +
-              `+${wallet.formatNaira(amount)}\n` +
-              `New balance: *${wallet.formatNaira(result.balance)}*\n\n` +
-              `Someone topped up your Mysogi wallet.\nType *menu* to start using it.`
-          );
-        } else if (result.phone) {
-          let msg =
-            `✅ *Wallet topped up!*\n\n` +
-            `+${wallet.formatNaira(amount)}\n` +
-            `New balance: *${wallet.formatNaira(result.balance)}*`;
-          if (result.creditRepaid) {
-            msg += `\n\n💳 Credit repaid: ${wallet.formatNaira(result.creditRepaid)}`;
-          }
-          msg += `\n\nType *menu* to continue.`;
-          await whatsapp.sendText(result.phone, msg);
+    if (result.ok) {
+      const shouldNotify =
+        result.phone &&
+        (!result.alreadyProcessed || !(await wallet.wasTopUpWhatsAppNotified(reference)));
+
+      if (shouldNotify) {
+        try {
+          await wallet.notifyWalletTopUpSuccess({
+            phone: result.phone,
+            payerPhone: result.payerPhone,
+            amount,
+            balance: result.balance,
+            reference,
+            isGift: result.isGift,
+            creditRepaid: result.creditRepaid,
+          });
+        } catch (err) {
+          logger.warn('Could not notify user of top-up', { error: err.message });
         }
-      } catch (err) {
-        logger.warn('Could not notify user of top-up', { error: err.message });
       }
     }
 

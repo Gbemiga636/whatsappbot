@@ -13,15 +13,26 @@ function isPinRequired() {
 }
 
 async function guardPurchase(phone, pending) {
+  const { getSession } = require('../sessionStore');
+  const session = getSession(phone) || {};
   const purchaseId = pending.purchaseId || `PUR_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-  pending = { ...pending, purchaseId };
+  pending = {
+    ...pending,
+    purchaseId,
+    snapshot: {
+      airtime: session.data?.airtime ? { ...session.data.airtime } : null,
+      bill: session.data?.bill ? { ...session.data.bill } : null,
+    },
+  };
 
   if (!isPinRequired()) {
     const { executePendingPurchase } = require('../wallet/purchaseHelper');
     return executePendingPurchase(phone, pending);
   }
 
-  if (!transactionPin.isPinSet(phone)) {
+  await transactionPin.ensurePinLoaded(phone);
+
+  if (!(await transactionPin.isPinSetAsync(phone))) {
     await pinPortal.promptSetPin(phone, { pendingPurchase: pending });
     return { awaitingPinSetup: true };
   }
@@ -77,9 +88,21 @@ async function sendPurchaseResult(phone, pending, purchase) {
   if (purchase?.awaitingPin || purchase?.awaitingPinSetup || purchase?.locked) return;
   if (purchase?.paymentMethod === 'credit') return;
 
+  const airtime = pending.snapshot?.airtime || session.data?.airtime;
+  const bill = pending.snapshot?.bill || session.data?.bill;
+
+  async function safeSend(text) {
+    try {
+      await whatsapp.sendText(phone, text);
+    } catch (err) {
+      const logger = require('../core/logger');
+      logger.error('Purchase confirmation WhatsApp failed', { phone, error: err.message });
+    }
+  }
+
   if (!purchase?.ok) {
     if (purchase?.inProgress || purchase?.pending) {
-      await whatsapp.sendText(phone, `⏳ ${purchase.message || 'Payment is processing. Please wait.'}`);
+      await safeSend(`⏳ ${purchase.message || 'Payment is processing. Please wait.'}`);
       return;
     }
     if (isProviderSuccessMessage(purchase?.message) && purchase?.refunded) {
@@ -101,21 +124,26 @@ async function sendPurchaseResult(phone, pending, purchase) {
     if (!purchase?.ok) {
       if (!purchase?.offeredCredit && !purchase?.prompted) {
         const refundNote = purchase?.refunded ? '\n\n_Your wallet was refunded._' : '';
-        await whatsapp.sendText(phone, `❌ ${purchase?.message || 'Payment failed'}${refundNote}`);
+        await safeSend(`❌ ${purchase?.message || 'Payment failed'}${refundNote}`);
       }
       return;
     }
   }
 
   if (pending.service === 'airtime') {
-    const airtime = session.data?.airtime;
-    const label = airtime?.type || pending.summaryText || 'Purchase';
+    const type = airtime?.type || 'airtime';
+    const label = type === 'data' ? 'Data' : 'Airtime';
+    const detail = airtime?.network && airtime?.phone
+      ? `${airtime.network} → ${airtime.phone}\n`
+      : pending.summaryText
+        ? `${pending.summaryText}\n`
+        : '';
     const providerNote = purchase.result?.pendingWebhook
-      ? '\n_Airtime is being delivered — you will receive it shortly._'
+      ? '\n_Delivering to the line now…_'
       : '';
-    await whatsapp.sendText(
-      phone,
-      `✅ *${label} complete!*\n\n` +
+    await safeSend(
+      `✅ *${label} sent!*\n\n` +
+        detail +
         `${purchase.result?.message ? `${purchase.result.message}\n\n` : ''}` +
         `Ref: *${purchase.reference}*\n` +
         `Paid: ${wallet.formatNaira(purchase.total || purchase.amount)}\n` +
@@ -123,17 +151,23 @@ async function sendPurchaseResult(phone, pending, purchase) {
         providerNote
     );
   } else if (pending.service === 'bills') {
-    const token = purchase.result?.token || purchase.result?.message || '';
-    await whatsapp.sendText(
-      phone,
-      `✅ *Bill paid!*\n\nRef: *${purchase.reference}*\n${token ? `Token: ${token}\n` : ''}` +
+    const token = purchase.result?.token;
+    const tokenLine = token && token !== 'successful' ? `Token: ${token}\n` : '';
+    const billDetail = bill?.type === 'betting' && bill?.bookmakerName
+      ? `${bill.bookmakerName} · ID ${bill.customerId}\n`
+      : '';
+    await safeSend(
+      `✅ *Payment successful!*\n\n` +
+        billDetail +
+        `Ref: *${purchase.reference}*\n` +
+        tokenLine +
+        `${purchase.result?.message ? `${purchase.result.message}\n` : ''}` +
         `Paid: ${wallet.formatNaira(purchase.total)}\n` +
         (purchase.balance != null ? `Balance: ${wallet.formatNaira(purchase.balance)}` : '')
     );
   } else if (pending.service === 'partners') {
     const service = session.data?.partnerService;
-    await whatsapp.sendText(
-      phone,
+    await safeSend(
       `✅ *${service?.name || 'Order'}* booked!\n\nRef: *${purchase.reference}*\n` +
         `Paid: ${wallet.formatNaira(purchase.total)}`
     );

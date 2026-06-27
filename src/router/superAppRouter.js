@@ -23,6 +23,8 @@ const supabaseFlow = require('../flows/supabaseAuthFlow');
 const { isSupabaseReady } = require('../auth/supabaseAuth');
 const { handleCreditAction, handleCreditCommand, isCreditChoice } = require('../credit/creditHandler');
 const pinPortal = require('../security/pinPortal');
+const wallet = require('../wallet/walletService');
+const transactionPin = require('../security/transactionPin');
 const { normalizePhone } = require('../utils/phone');
 
 const GREETINGS = new Set([
@@ -106,10 +108,12 @@ async function handleIncomingMessage(from, message) {
 
   if (isSupabaseReady()) {
     await restoreUserByPhone(phone);
+    await wallet.refreshWalletFromDb(phone);
+    await transactionPin.ensurePinLoaded(phone);
   }
 
   const user = getUser(phone);
-  const ctx = createContext(phone, message, session, user);
+  let ctx = createContext(phone, message, session, user);
   const choice = incoming.buttonId || incoming.listId || incoming.text;
   const textLower = (incoming.text || '').trim().toLowerCase();
 
@@ -161,8 +165,18 @@ async function handleIncomingMessage(from, message) {
 
   if (await handleCreditCommand(phone, incoming.text)) return;
 
-  // Natural language — understand free text before greeting/menu shortcuts
-  if (incoming.text) {
+  // Catch missed Paystack top-up confirmations (text only — never block list/button taps)
+  if (!incoming.listId && !incoming.buttonId) {
+    if (await wallet.tryCompletePendingTopUp(phone)) return;
+  }
+
+  // Natural language — skip for interactive list/button during active service wizards
+  const inServiceWizard =
+    session.activeService &&
+    incoming.listId &&
+    ['airtime', 'bills', 'wallet'].includes(session.activeService);
+
+  if (incoming.text && !inServiceWizard) {
     const nlCtx = { ...ctx, session, text: incoming.text, incoming };
     const nlHandled = await tryNaturalLanguageRoute(phone, incoming, nlCtx);
     if (nlHandled) return;
@@ -183,8 +197,10 @@ async function handleIncomingMessage(from, message) {
     return handleAdsFlow(phone, message);
   }
 
-  // Active service handler
+  // Active service handler — refresh session from cache (may have been updated async)
   if (session.activeService) {
+    session = getSession(phone) || session;
+    ctx = createContext(phone, message, session, user);
     const service = getService(session.activeService);
     if (service) {
       try {

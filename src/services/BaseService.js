@@ -29,14 +29,15 @@ class BaseService {
   }
 
   async updateSession(phone, patch) {
-    const { getSession } = require('../sessionStore');
+    const { getSession, setSessionAndWait } = require('../sessionStore');
     const current = getSession(phone) || { step: 'idle', data: {} };
-    setSession(phone, {
+    const next = {
       ...current,
       activeService: this.id,
       ...patch,
       data: { ...current.data, ...(patch.data || {}) },
-    });
+    };
+    await setSessionAndWait(phone, next);
   }
 
   async goHome(phone) {

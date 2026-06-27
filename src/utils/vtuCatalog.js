@@ -6,9 +6,12 @@ const PAGE_SIZE = 9;
 
 function classifyBundlePeriod(name) {
   const n = String(name || '').toLowerCase();
-  if (/\bdaily\b|\b1\s*day\b|1-day|\(1 day\)|per day/.test(n)) return 'daily';
-  if (/\bweekly\b|\b7\s*day|\b7-day|\(7 day\)|2-week|14.day|14days/.test(n)) return 'weekly';
-  if (/\bmonthly\b|\b30\s*day|\b30-day|\(30 day\)|2-month|3-month|90.day|180.day|yearly|12.month|\bmonth\b/.test(n)) {
+  if (/\bdaily\b|\b1\s*day\b|1-day|\(1 day\)|per day|\b2-?day\b|\b3-?day\b/.test(n)) return 'daily';
+  if (/\bweekly\b|\b7\s*day|\b7-?day|\(7 day\)|7days|\bawoof\b.*7/.test(n)) return 'weekly';
+  if (
+    /\bmonthly\b|\b30\s*day|\b30-?day|\(30 day\)|14\s*day|14-?day|14days|\b2-month|\b3-month|90.day|180.day|yearly|12.month|\bmonth\b|\b60\s*day|\b90\s*day/
+      .test(n)
+  ) {
     return 'monthly';
   }
   return 'other';
@@ -16,7 +19,8 @@ function classifyBundlePeriod(name) {
 
 function filterBundlesByPeriod(bundles, period) {
   if (!period || period === 'all') return bundles;
-  return bundles.filter((b) => classifyBundlePeriod(b.planName) === period);
+  const filtered = bundles.filter((b) => classifyBundlePeriod(b.planName) === period);
+  return filtered.length ? filtered : bundles;
 }
 
 function paginateItems(items, page = 0) {

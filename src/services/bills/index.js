@@ -124,6 +124,22 @@ class BillsService extends BaseService {
   }
 
   async showConfirm(ctx, bill) {
+    const afford = await wallet.canAffordPurchase(ctx.phone, bill.amount);
+    if (!afford.ok) {
+      await this.reply(
+        ctx.phone,
+        `💳 *Insufficient balance*\n\n` +
+          `Amount: ${wallet.formatNaira(afford.base)}\n` +
+          `Mysogi fee: ${wallet.formatNaira(afford.commission)}\n` +
+          `*Total needed: ${wallet.formatNaira(afford.total)}*\n\n` +
+          `Your balance: *${wallet.formatNaira(afford.balance)}*\n` +
+          `Short by: *${wallet.formatNaira(afford.shortfall)}*`
+      );
+      const { sendTopUpPrompt } = require('../../wallet/purchaseHelper');
+      await sendTopUpPrompt(ctx.phone, afford.shortfall, 'this payment');
+      return;
+    }
+
     const pricing = wallet.formatWalletSummary(bill.amount);
     const buttons = [
       { id: 'bill_confirm', title: '✅ Pay now' },
@@ -164,6 +180,9 @@ class BillsService extends BaseService {
           `${purchase.result?.message ? `${purchase.result.message}\n` : ''}` +
           `Paid: ${wallet.formatNaira(purchase.total)}\nBalance: ${wallet.formatNaira(purchase.balance)}`
       );
+    } else if (!purchase?.offeredCredit && !purchase?.prompted && !purchase?.insufficient) {
+      const refundNote = purchase?.refunded ? '\n\n_Your wallet was refunded._' : '';
+      await this.reply(ctx.phone, `❌ ${purchase?.message || 'Payment could not be completed.'}${refundNote}`);
     }
     return this.showMenu(ctx);
   }
@@ -190,59 +209,105 @@ class BillsService extends BaseService {
       return;
     }
 
-    if (step === this.STEPS.PICK_DISCO) {
-      if (choice === 'disco_page_1') {
-        const { items } = paginateItems(data.discos, 1);
-        const rows = items.map((d, i) => ({
-          id: `disco_${9 + i}`,
-          title: d.name.replace(/\[.*?\]/g, '').trim().slice(0, 24),
-          description: d.code,
-        }));
-        await this.list(ctx.phone, '*More discos*', 'Discos', [{ title: 'Provider', rows: rows.slice(0, 10) }]);
-        return;
-      }
-      if (choice?.startsWith('disco_')) {
-        const idx = Number(choice.replace('disco_', ''));
-        const disco = data.discos?.[idx];
-        if (!disco) return this.showDiscoPicker(ctx);
-        await this.reply(ctx.phone, `*${disco.name}*\n\nEnter your *meter number*:`);
-        await this.updateSession(ctx.phone, {
-          step: this.STEPS.ENTER_DETAIL,
-          data: {
-            bill: {
-              type: 'electricity',
-              provider: disco.code,
-              providerName: disco.name,
-              productId: disco.id,
-            },
+    if (choice?.startsWith('disco_') && data.discos) {
+      const idx = Number(choice.replace('disco_', ''));
+      const disco = data.discos[idx];
+      if (!disco) return this.showDiscoPicker(ctx);
+      await this.reply(ctx.phone, `*${disco.name}*\n\nEnter your *meter number*:`);
+      await this.updateSession(ctx.phone, {
+        step: this.STEPS.ENTER_DETAIL,
+        data: {
+          bill: {
+            type: 'electricity',
+            provider: disco.code,
+            providerName: disco.name,
+            productId: disco.id,
           },
-        });
-        return;
-      }
+        },
+      });
+      return;
     }
 
-    if (step === this.STEPS.PICK_BOOKMAKER) {
-      if (choice?.startsWith('bet_page_')) {
-        const page = Number(choice.replace('bet_page_', ''));
-        return this.showBookmakerPicker(ctx, page);
-      }
-      if (choice?.startsWith('bet_')) {
-        const idx = Number(choice.replace('bet_', ''));
-        const bookmaker = data.bookmakers?.[idx];
-        if (!bookmaker) return this.showBookmakerPicker(ctx, data.betPage || 0);
-        await this.reply(ctx.phone, `*${bookmaker.name}*\n\nEnter your *Customer / User ID*:`);
-        await this.updateSession(ctx.phone, {
-          step: this.STEPS.ENTER_DETAIL,
-          data: {
-            bill: {
-              type: 'betting',
-              productId: bookmaker.id,
-              bookmakerName: bookmaker.name,
-            },
+    if (choice?.startsWith('bet_page_')) {
+      const page = Number(choice.replace('bet_page_', ''));
+      return this.showBookmakerPicker(ctx, page);
+    }
+
+    if (choice?.startsWith('bet_') && data.bookmakers) {
+      const idx = Number(choice.replace('bet_', ''));
+      const bookmaker = data.bookmakers[idx];
+      if (!bookmaker) return this.showBookmakerPicker(ctx, data.betPage || 0);
+      await this.reply(ctx.phone, `*${bookmaker.name}*\n\nEnter your *Customer / User ID*:`);
+      await this.updateSession(ctx.phone, {
+        step: this.STEPS.ENTER_DETAIL,
+        data: {
+          bill: {
+            type: 'betting',
+            productId: bookmaker.id,
+            bookmakerName: bookmaker.name,
           },
-        });
+        },
+      });
+      return;
+    }
+
+    if (choice === 'bill_confirm' && data.bill) {
+      return this.executePayment(ctx, data.bill, false);
+    }
+    if (choice === 'bill_credit' && data.bill) {
+      return this.executePayment(ctx, data.bill, true);
+    }
+
+    if (choice?.startsWith('bill_amt_') && data.bill) {
+      if (choice === 'bill_amt_custom') {
+        await this.reply(ctx.phone, 'Enter amount in Naira (min ₦100):');
+        await this.updateSession(ctx.phone, { step: this.STEPS.ENTER_AMOUNT, data });
         return;
       }
+      const amount = Number(choice.replace('bill_amt_', ''));
+      if (!amount || amount < 100) {
+        await this.reply(ctx.phone, 'Minimum ₦100.');
+        return;
+      }
+      return this.showConfirm(ctx, { ...data.bill, amount });
+    }
+
+    if (choice?.startsWith('pkg_') && data.packages && data.bill) {
+      if (choice.startsWith('pkg_page_')) {
+        const page = Number(choice.replace('pkg_page_', ''));
+        const { items, hasMore } = paginateItems(data.packages, page);
+        const rows = items.map((p, i) => ({
+          id: `pkg_${page * 9 + i}`,
+          title: formatBundleTitle({ planName: p.name, amount: p.amount }).slice(0, 24),
+          description: data.bill.smartcard,
+        }));
+        if (hasMore) rows.push({ id: `pkg_page_${page + 1}`, title: '➡️ More', description: 'Next' });
+        await this.list(ctx.phone, '*More packages*', 'Packages', [{ title: 'Bouquets', rows: rows.slice(0, 10) }]);
+        return;
+      }
+      const idx = Number(choice.replace('pkg_', ''));
+      const pkg = data.packages[idx];
+      if (!pkg) return this.showCablePackages(ctx, data.bill.type, data.bill.smartcard);
+      const bill = {
+        ...data.bill,
+        amount: pkg.amount,
+        productId: pkg.productId,
+        variationCode: pkg.variationCode,
+        packageName: pkg.name,
+        variation: pkg,
+      };
+      return this.showConfirm(ctx, bill);
+    }
+
+    if (choice === 'disco_page_1' && data.discos) {
+      const { items } = paginateItems(data.discos, 1);
+      const rows = items.map((d, i) => ({
+        id: `disco_${9 + i}`,
+        title: d.name.replace(/\[.*?\]/g, '').trim().slice(0, 24),
+        description: d.code,
+      }));
+      await this.list(ctx.phone, '*More discos*', 'Discos', [{ title: 'Provider', rows: rows.slice(0, 10) }]);
+      return;
     }
 
     if (step === this.STEPS.ENTER_DETAIL) {
@@ -274,52 +339,6 @@ class BillsService extends BaseService {
       return this.showCablePackages(ctx, bill.type, bill.smartcard);
     }
 
-    if (step === this.STEPS.PICK_PACKAGE) {
-      if (choice?.startsWith('pkg_page_')) {
-        const page = Number(choice.replace('pkg_page_', ''));
-        const { items, hasMore } = paginateItems(data.packages, page);
-        const rows = items.map((p, i) => ({
-          id: `pkg_${page * 9 + i}`,
-          title: formatBundleTitle({ planName: p.name, amount: p.amount }).slice(0, 24),
-          description: data.bill.smartcard,
-        }));
-        if (hasMore) rows.push({ id: `pkg_page_${page + 1}`, title: '➡️ More', description: 'Next' });
-        await this.list(ctx.phone, '*More packages*', 'Packages', [{ title: 'Bouquets', rows: rows.slice(0, 10) }]);
-        return;
-      }
-
-      if (choice?.startsWith('pkg_')) {
-        const idx = Number(choice.replace('pkg_', ''));
-        const pkg = data.packages?.[idx];
-        if (!pkg) return this.showCablePackages(ctx, data.bill.type, data.bill.smartcard);
-        const bill = {
-          ...data.bill,
-          amount: pkg.amount,
-          productId: pkg.productId,
-          variationCode: pkg.variationCode,
-          packageName: pkg.name,
-          variation: pkg,
-        };
-        return this.showConfirm(ctx, bill);
-      }
-    }
-
-    if (step === this.STEPS.PICK_AMOUNT) {
-      if (choice === 'bill_amt_custom') {
-        await this.reply(ctx.phone, 'Enter amount in Naira (min ₦100):');
-        await this.updateSession(ctx.phone, { step: this.STEPS.ENTER_AMOUNT, data });
-        return;
-      }
-      if (choice?.startsWith('bill_amt_')) {
-        const amount = Number(choice.replace('bill_amt_', ''));
-        if (!amount || amount < 100) {
-          await this.reply(ctx.phone, 'Minimum ₦100.');
-          return;
-        }
-        return this.showConfirm(ctx, { ...data.bill, amount });
-      }
-    }
-
     if (step === this.STEPS.ENTER_AMOUNT) {
       const amount = parseFloat(text.replace(/[₦,]/g, ''));
       if (!amount || amount < 100) {
@@ -329,11 +348,9 @@ class BillsService extends BaseService {
       return this.showConfirm(ctx, { ...data.bill, amount });
     }
 
-    if (step === this.STEPS.CONFIRM && choice === 'bill_credit') {
-      return this.executePayment(ctx, data.bill, true);
-    }
-    if (step === this.STEPS.CONFIRM && choice === 'bill_confirm') {
-      return this.executePayment(ctx, data.bill, false);
+    if (step && step !== this.STEPS.MENU && data?.bill) {
+      await this.reply(ctx.phone, '_Use the buttons/list above, or type *menu* to go home._');
+      return;
     }
 
     return this.showMenu(ctx);

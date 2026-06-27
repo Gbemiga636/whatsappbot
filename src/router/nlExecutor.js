@@ -38,6 +38,34 @@ const {
 
 const NL_GATHER_STEP = 'nl_gather';
 
+/** Wizard steps where NL must not re-start orders (prevents duplicate lists/menus). */
+const STRUCTURED_FLOW_STEPS = {
+  airtime: new Set([
+    'pick_network',
+    'pick_recipient',
+    'enter_phone',
+    'pick_period',
+    'pick_bundle',
+    'pick_amount',
+    'enter_amount',
+  ]),
+  bills: new Set([
+    'pick_disco',
+    'pick_bookmaker',
+    'enter_detail',
+    'pick_package',
+    'pick_amount',
+    'enter_amount',
+  ]),
+  wallet: new Set(['wallet_menu', 'topup_amount', 'topup_other_phone']),
+};
+
+function isStructuredServiceFlow(session) {
+  if (!session?.activeService) return false;
+  const steps = STRUCTURED_FLOW_STEPS[session.activeService];
+  return steps ? steps.has(session.step) : false;
+}
+
 function toLocalPhone(phone) {
   const digits = String(phone).replace(/\D/g, '');
   if (digits.startsWith('234')) return `0${digits.slice(3)}`;
@@ -133,7 +161,7 @@ async function launchIntoTelecomFlow(phone, partial, ctx) {
     if (airtime.period) {
       return airtimeSvc.showDataBundles(ctxObj, airtime, `data_period_${airtime.period}`, 0);
     }
-    return airtimeSvc.showDataPeriodPicker(ctxObj, airtime);
+    return airtimeSvc.showDataBundles(ctxObj, airtime, 'data_period_all', 0);
   }
 
   if (airtime.amount && airtime.amount >= 50) {
@@ -567,9 +595,12 @@ function shouldTryNaturalLanguage(session, incoming) {
   const text = incoming.text.trim();
   if (text.length < 2) return false;
 
-  if (isServicesQuestion(text)) return true;
+  if (/^(menu|home|start|0|cancel|stop)$/i.test(text)) return false;
 
-  if (/^(menu|home|start|0)$/i.test(text)) return false;
+  // Let the active service wizard handle input — avoids duplicate pickers/menus
+  if (isStructuredServiceFlow(session)) return false;
+
+  if (isServicesQuestion(text)) return true;
 
   if (session.step === NL_GATHER_STEP || session.data?.nlDraft) {
     if (isNewOrderOverride(text, session.data.nlDraft)) return true;
@@ -651,5 +682,6 @@ module.exports = {
   shouldTryNaturalLanguage,
   tryNaturalLanguageRoute,
   tryContinueDraft,
+  isStructuredServiceFlow,
   NL_GATHER_STEP,
 };
