@@ -8,6 +8,7 @@ const LIVE_SERVICE_DETAILS = [
   { id: 'wallet', name: 'Wallet', emoji: '💳', desc: 'Top up, check balance, send money to others' },
   { id: 'airtime', name: 'Airtime', emoji: '📱', desc: 'MTN, Glo, Airtel, 9mobile — airtime top-up' },
   { id: 'bills', name: 'Bills & Pay', emoji: '⚡', desc: 'Electricity, DStv, GOtv, StarTimes, betting top-up' },
+  { id: 'food', name: 'Order Food', emoji: '🍔', desc: 'Chowdeck — restaurants near you, delivery to your door' },
   { id: 'partners', name: 'Partner Services', emoji: '🤝', desc: 'Book plumbers, cleaners, delivery & more' },
   { id: 'ai', name: 'AI Assistant', emoji: '🤖', desc: 'Ask anything — homework, business, advice' },
   { id: 'ads', name: 'Ads Studio', emoji: '📢', desc: 'Create flyers, captions & ad campaigns with AI' },

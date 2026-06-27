@@ -59,6 +59,35 @@ async function executePendingPurchase(phone, pending) {
     execute = () => telecom.payBill({ ...bill, phone });
   } else if (service === 'partners') {
     execute = async () => ({ ok: true, message: 'Order placed' });
+  } else if (service === 'food') {
+    const food = pending.snapshot?.food || session.data?.food;
+    if (!food?.checkout || !food?.vendor) {
+      return { ok: false, message: 'Food order expired. Start again.' };
+    }
+    const chowdeck = require('../providers/chowdeck');
+    const checkout = food.checkout;
+    const orderRef = chowdeck.buildOrderReference();
+    execute = async () => {
+      let deliveryNote = '';
+      if (checkout.feeId) {
+        const delivery = await chowdeck.createRelayDelivery({
+          feeId: checkout.feeId,
+          source: checkout.source,
+          destination: checkout.destination,
+          customer: { name: 'Mysogi Customer', phone },
+          orderReference: orderRef,
+          notes: `Food order ${orderRef}`,
+        });
+        deliveryNote = delivery.ok
+          ? `\nDelivery ref: *${delivery.reference}*`
+          : `\n_${delivery.message || 'Delivery dispatch pending'}_`;
+      }
+      return {
+        ok: true,
+        message: `Order placed with *${food.vendor.name}*.${deliveryNote}`,
+        orderReference: orderRef,
+      };
+    };
   } else {
     return { ok: false, message: 'Unknown purchase type' };
   }

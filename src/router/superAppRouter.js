@@ -31,6 +31,7 @@ const QUICK_VTU_ENTRIES = {
   menu_electric: { service: 'bills', entry: 'electric' },
   menu_tv: { service: 'bills', entry: 'tv' },
   menu_betting: { service: 'bills', entry: 'betting' },
+  menu_food: { service: 'food', entry: 'food' },
 };
 
 const GREETINGS = new Set([
@@ -88,6 +89,11 @@ async function routeQuickVtuEntry(phone, choice, ctx) {
     return true;
   }
 
+  if (entry.service === 'food') {
+    await service.showMenu(freshCtx);
+    return true;
+  }
+
   if (entry.entry === 'electric') await service.showDiscoPicker(freshCtx);
   else if (entry.entry === 'tv') await service.showTvPicker(freshCtx);
   else if (entry.entry === 'betting') await service.showBookmakerPicker(freshCtx);
@@ -134,7 +140,7 @@ async function handleIncomingMessage(from, message) {
     id: message.id,
   };
 
-  if (!incoming.text && !incoming.buttonId && !incoming.listId && !incoming.media) {
+  if (!incoming.text && !incoming.buttonId && !incoming.listId && !incoming.media && message.type !== 'location') {
     const whatsapp = require('../whatsapp');
     await whatsapp.sendText(
       phone,

@@ -22,6 +22,7 @@ async function guardPurchase(phone, pending) {
     snapshot: {
       airtime: session.data?.airtime ? { ...session.data.airtime } : null,
       bill: session.data?.bill ? { ...session.data.bill } : null,
+      food: session.data?.food ? JSON.parse(JSON.stringify(session.data.food)) : null,
     },
   };
 
@@ -170,6 +171,16 @@ async function sendPurchaseResult(phone, pending, purchase) {
     await safeSend(
       `✅ *${service?.name || 'Order'}* booked!\n\nRef: *${purchase.reference}*\n` +
         `Paid: ${wallet.formatNaira(purchase.total)}`
+    );
+  } else if (pending.service === 'food') {
+    const food = pending.snapshot?.food || session.data?.food;
+    await safeSend(
+      `✅ *Food order confirmed!*\n\n` +
+        `${purchase.result?.message || ''}\n\n` +
+        `Restaurant: *${food?.vendor?.name || '—'}*\n` +
+        `Ref: *${purchase.reference}*\n` +
+        `Paid: ${wallet.formatNaira(purchase.total)}\n` +
+        (purchase.balance != null ? `Balance: ${wallet.formatNaira(purchase.balance)}` : '')
     );
   }
 }

@@ -17,9 +17,10 @@ const MAIN_VTU_ROWS = [
   { id: 'menu_electric', title: '⚡ Electricity', description: 'All discos' },
   { id: 'menu_tv', title: '📺 TV subscription', description: 'DStv, GOtv, StarTimes' },
   { id: 'menu_betting', title: '🎰 Betting', description: 'Fund betting account' },
+  { id: 'menu_food', title: '🍔 Order Food', description: 'Chowdeck — restaurants near you' },
 ];
 
-const MORE_SERVICE_IDS = ['partners', 'ads', 'banking', 'food', 'shopping', 'travel'];
+const MORE_SERVICE_IDS = ['partners', 'ads', 'banking', 'shopping', 'travel'];
 
 function formatDisplayName(user) {
   if (!user) return 'there';
@@ -102,7 +103,7 @@ async function showMoreServicesMenu(phone) {
 
   await whatsapp.sendList(
     phone,
-    '*More services*\n\nPartners, ads, and more — some features are coming soon.',
+    '*More services*\n\nPartners, ads, banking & more.',
     'More options',
     [{ title: 'More', rows }]
   );

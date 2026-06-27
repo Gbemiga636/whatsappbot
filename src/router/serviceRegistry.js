@@ -27,7 +27,7 @@ const SERVICES = [
   { id: 'partners', tier: 'core', live: true },
   { id: 'ai', tier: 'core', live: true },
   { id: 'ads', tier: 'core', live: true },
-  { id: 'food', tier: 'core', live: false },
+  { id: 'food', tier: 'core', live: true },
   { id: 'shopping', tier: 'core', live: false },
   { id: 'banking', tier: 'core', live: false },
   { id: 'loans', tier: 'core', live: false },

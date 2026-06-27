@@ -132,6 +132,15 @@ const STRUCTURED_FLOW_STEPS = {
     'pick_amount',
     'enter_amount',
   ]),
+  food: new Set([
+    'food_location',
+    'food_stores',
+    'food_categories',
+    'food_items',
+    'food_quantity',
+    'food_cart',
+    'food_confirm',
+  ]),
   wallet: new Set(['wallet_menu', 'topup_amount', 'topup_other_phone']),
 };
 

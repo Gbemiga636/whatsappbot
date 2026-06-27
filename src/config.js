@@ -115,8 +115,12 @@ module.exports = {
   },
 
   delivery: {
-    provider: process.env.DELIVERY_PROVIDER || 'internal', // chowdeck | gokada | internal
-    chowdeck: { apiKey: (process.env.CHOWDECK_API_KEY || '').trim() },
+    provider: process.env.DELIVERY_PROVIDER || 'chowdeck', // chowdeck | gokada | internal
+    chowdeck: {
+      apiKey: (process.env.CHOWDECK_API_KEY || '').trim(),
+      merchantReference: (process.env.CHOWDECK_MERCHANT_REFERENCE || '').trim(),
+      baseUrl: (process.env.CHOWDECK_BASE_URL || 'https://api.chowdeck.com').trim(),
+    },
   },
 
   loans: {
