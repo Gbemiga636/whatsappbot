@@ -5,12 +5,14 @@ const {
   filterBundlesByPeriod,
   paginateItems,
   formatBundleTitle,
+  formatBundleListRow,
   formatAmountTitle,
   PAGE_SIZE,
 } = require('../../utils/vtuCatalog');
 
 const NETWORKS = ['MTN', 'GLO', 'Airtel', '9mobile'];
 const AIRTIME_AMOUNTS = [100, 200, 500, 1000, 2000, 5000];
+const MIN_AIRTIME_AMOUNT = 100;
 
 function toLocalPhone(phone) {
   const digits = String(phone).replace(/\D/g, '');
@@ -85,9 +87,13 @@ class AirtimeService extends BaseService {
   }
 
   async showRecipientPicker(ctx, airtime) {
+    const periodNote =
+      airtime.type === 'data' && airtime.dataPeriod
+        ? `\nDuration: *${periodLabel(airtime.dataPeriod)}*`
+        : '';
     await this.buttons(
       ctx.phone,
-      `*${airtime.network} ${airtime.type === 'data' ? 'data' : 'airtime'}*\n\nWho is this for?`,
+      `*${airtime.network} ${airtime.type === 'data' ? 'data' : 'airtime'}*${periodNote}\n\nWho is this for?`,
       [
         { id: 'air_self', title: 'My number' },
         { id: 'air_other', title: 'Someone else' },
@@ -116,15 +122,15 @@ class AirtimeService extends BaseService {
   async showDataPeriodPicker(ctx, airtime) {
     await this.list(
       ctx.phone,
-      `*${airtime.network} data*\n📞 ${airtime.phone}\n\nFilter bundles (or pick *All*):`,
-      'Bundle type',
+      `*${airtime.network} data*\n\nChoose bundle duration:`,
+      'Duration',
       [{
-        title: 'Duration',
+        title: 'How long?',
         rows: [
-          { id: 'data_period_all', title: '📋 All bundles', description: 'Recommended — full list' },
-          { id: 'data_period_daily', title: '📅 Daily', description: '1–3 day bundles' },
-          { id: 'data_period_weekly', title: '📆 Weekly', description: '7-day bundles' },
-          { id: 'data_period_monthly', title: '🗓️ Monthly', description: '30+ day bundles' },
+          { id: 'data_period_all', title: '📋 All bundles', description: 'Show every plan available' },
+          { id: 'data_period_daily', title: '📅 Daily', description: '1–3 day plans' },
+          { id: 'data_period_weekly', title: '📆 Weekly', description: '7-day plans' },
+          { id: 'data_period_monthly', title: '🗓️ Monthly', description: '30-day & longer plans' },
         ],
       }]
     );
@@ -149,18 +155,28 @@ class AirtimeService extends BaseService {
 
     const periodKey = String(period || 'data_period_all').replace('data_period_', '');
     const filtered = filterBundlesByPeriod(all, periodKey);
+
+    if (!filtered.length) {
+      await this.reply(
+        ctx.phone,
+        `No *${periodLabel(period)}* bundles for *${airtime.network}* right now.\n\nTry *All bundles* or another duration.`
+      );
+      if (airtime.phone) {
+        return this.showDataBundles(ctx, airtime, 'data_period_all', 0);
+      }
+      return this.showDataPeriodPicker(ctx, airtime);
+    }
+
     const { items, hasMore, total } = paginateItems(filtered, page);
 
-    const filterNote =
-      periodKey !== 'all' && filtered.length === all.length
-        ? '\n_Showing all plans (no exact filter match)._'
-        : '';
-
-    const rows = items.map((b, i) => ({
-      id: `data_bundle_p${page}_i${i}`,
-      title: formatBundleTitle(b).slice(0, 24),
-      description: `${b.dataType || 'data'} · ${airtime.network}`.slice(0, 72),
-    }));
+    const rows = items.map((b, i) => {
+      const row = formatBundleListRow({ ...b, network: airtime.network });
+      return {
+        id: `data_bundle_p${page}_i${i}`,
+        title: row.title,
+        description: row.description,
+      };
+    });
 
     if (page > 0) {
       rows.unshift({ id: `data_page_${page - 1}`, title: '⬅️ Previous', description: 'Earlier bundles' });
@@ -172,7 +188,7 @@ class AirtimeService extends BaseService {
 
     await this.list(
       ctx.phone,
-      `*${airtime.network} data* — ${periodLabel(period)}\n📞 ${airtime.phone}\n${total} plan(s)${filterNote}\n\nTap a bundle:`,
+      `*${airtime.network} data* — ${periodLabel(period)}\n📞 ${airtime.phone}\n${total} plan(s)\n\nTap a bundle below:`,
       'Bundles',
       [{ title: 'Available plans', rows: rows.slice(0, 10) }]
     );
@@ -300,15 +316,19 @@ class AirtimeService extends BaseService {
 
     if (choice?.startsWith('net_')) {
       const network = networkFromChoice(choice);
-      if (network) {
-        return this.showRecipientPicker(ctx, { ...(airtime || { type: 'airtime' }), network });
+      if (!network) return this.showMenu(ctx);
+      const base = { ...(data?.airtime || airtime || {}), network };
+      const type = base.type === 'data' ? 'data' : 'airtime';
+      if (type === 'data') {
+        return this.showDataPeriodPicker(ctx, { ...base, type: 'data', network });
       }
+      return this.showRecipientPicker(ctx, { ...base, type: 'airtime', network });
     }
 
     if (choice === 'air_self' && airtime) {
       const next = { ...airtime, phone: toLocalPhone(ctx.phone), recipientType: 'self' };
       if (next.type === 'data') {
-        return this.showDataBundles(ctx, next, 'data_period_all', 0);
+        return this.showDataBundles(ctx, next, next.dataPeriod || data.dataPeriod || 'data_period_all', 0);
       }
       return this.showAirtimeAmounts(ctx, next);
     }
@@ -327,7 +347,11 @@ class AirtimeService extends BaseService {
     }
 
     if (choice?.startsWith('data_period_') && airtime?.type === 'data') {
-      return this.showDataBundles(ctx, airtime, choice, 0);
+      const withPeriod = { ...airtime, dataPeriod: choice };
+      if (!withPeriod.phone) {
+        return this.showRecipientPicker(ctx, withPeriod);
+      }
+      return this.showDataBundles(ctx, withPeriod, choice, 0);
     }
 
     if (choice?.startsWith('data_page_') && airtime?.type === 'data') {
@@ -364,16 +388,16 @@ class AirtimeService extends BaseService {
       return this.executePurchase(ctx, airtime, true);
     }
 
-    if (choice === 'air_amt_custom' && airtime) {
-      await this.reply(ctx.phone, 'Enter amount in Naira (min ₦50):');
+    if (choice === 'air_amt_custom' && airtime?.type === 'airtime') {
+      await this.reply(ctx.phone, `Enter amount in Naira (min ${wallet.formatNaira(MIN_AIRTIME_AMOUNT)}):`);
       await this.updateSession(ctx.phone, { step: this.STEPS.ENTER_AMOUNT, data });
       return;
     }
 
-    if (choice?.startsWith('air_amt_') && airtime) {
+    if (choice?.startsWith('air_amt_') && airtime?.type === 'airtime') {
       const amount = Number(choice.replace('air_amt_', ''));
-      if (!amount || amount < 50) {
-        await this.reply(ctx.phone, 'Minimum airtime is ₦50.');
+      if (!amount || amount < MIN_AIRTIME_AMOUNT) {
+        await this.reply(ctx.phone, `Minimum airtime is ${wallet.formatNaira(MIN_AIRTIME_AMOUNT)}.`);
         return;
       }
       return this.showConfirm(ctx, { ...airtime, amount });
@@ -388,24 +412,37 @@ class AirtimeService extends BaseService {
       }
       const next = { ...airtime, phone };
       if (next.type === 'data') {
-        return this.showDataBundles(ctx, next, 'data_period_all', 0);
+        return this.showDataBundles(ctx, next, next.dataPeriod || data.dataPeriod || 'data_period_all', 0);
       }
       return this.showAirtimeAmounts(ctx, next);
     }
 
-    if (step === this.STEPS.PICK_AMOUNT && airtime) {
-      const parsed = parseFloat(String(text || '').replace(/[₦,]/g, ''));
-      if (parsed >= 50) {
-        return this.showConfirm(ctx, { ...airtime, amount: parsed });
-      }
-      await this.reply(ctx.phone, 'Pick an amount from the list above, or type a number (min ₦50).');
+    if (step === this.STEPS.PICK_PERIOD && airtime?.type === 'data') {
+      await this.reply(ctx.phone, '_Tap Daily, Weekly, Monthly, or All bundles from the list above._');
       return;
     }
 
-    if (step === this.STEPS.ENTER_AMOUNT && airtime) {
+    if (step === this.STEPS.PICK_BUNDLE && airtime?.type === 'data') {
+      await this.reply(ctx.phone, '_Tap a bundle from the list above, or *Change filter* to pick another duration._');
+      return;
+    }
+
+    if (step === this.STEPS.PICK_AMOUNT && airtime?.type === 'airtime') {
+      const parsed = parseFloat(String(text || '').replace(/[₦,]/g, ''));
+      if (parsed >= MIN_AIRTIME_AMOUNT) {
+        return this.showConfirm(ctx, { ...airtime, amount: parsed });
+      }
+      await this.reply(
+        ctx.phone,
+        `Pick an amount from the list above, or type a number (min ${wallet.formatNaira(MIN_AIRTIME_AMOUNT)}).`
+      );
+      return;
+    }
+
+    if (step === this.STEPS.ENTER_AMOUNT && airtime?.type === 'airtime') {
       const amount = parseFloat(String(text || '').replace(/[₦,]/g, ''));
-      if (!amount || amount < 50) {
-        await this.reply(ctx.phone, 'Minimum ₦50.');
+      if (!amount || amount < MIN_AIRTIME_AMOUNT) {
+        await this.reply(ctx.phone, `Minimum ${wallet.formatNaira(MIN_AIRTIME_AMOUNT)}.`);
         return;
       }
       return this.showConfirm(ctx, { ...airtime, amount });
@@ -416,6 +453,10 @@ class AirtimeService extends BaseService {
     }
 
     if (airtime && step && step !== this.STEPS.MENU) {
+      if (airtime.type === 'data' && [this.STEPS.PICK_NETWORK, this.STEPS.PICK_RECIPIENT].includes(step)) {
+        await this.reply(ctx.phone, '_Tap an option from the list above._');
+        return;
+      }
       await this.reply(ctx.phone, '_Tap a button or list option above, or type *menu* to go home._');
       return;
     }
