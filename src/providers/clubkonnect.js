@@ -22,6 +22,10 @@ const NETWORK_CODES = {
   AIRTEL: '04',
 };
 
+const CODE_TO_NETWORK = Object.fromEntries(
+  Object.entries(NETWORK_CODES).filter(([k]) => k !== 'ETISALAT').map(([k, v]) => [v, k])
+);
+
 const DISCO_CODES = {
   EKEDC: '01',
   IKEDC: '02',
@@ -113,16 +117,31 @@ function friendlyFailureMessage(message, statusCode) {
   return text || 'Transaction failed';
 }
 
+function isCatalogPayload(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return Array.isArray(data);
+  if (data.balance != null) return false;
+  const keys = Object.keys(data).map((k) => k.toLowerCase());
+  return keys.some((k) =>
+    ['mtn', 'glo', 'airtel', 'etisalat', '9mobile', 'products', 'dataplans', 'plans', 'dstv', 'gotv', 'mobile_network'].some(
+      (n) => k.includes(n)
+    )
+  );
+}
+
 function parseResponse(data) {
   if (!data || typeof data !== 'object') {
     return { ok: false, message: 'Invalid response from ClubKonnect', raw: data };
   }
 
-  if (data.balance != null && !parseStatusCode(data) && !data.status) {
+  if (data.balance != null && !parseStatusCode(data) && !String(data.status || '').match(/INVALID/i)) {
     const balance = Number(String(data.balance).replace(/,/g, ''));
     if (Number.isFinite(balance)) {
       return { ok: true, balance, message: 'Balance check OK', raw: data };
     }
+  }
+
+  if (isCatalogPayload(data)) {
+    return { ok: true, message: 'Catalog loaded', raw: data };
   }
 
   const statusCode = parseStatusCode(data);
@@ -215,26 +234,28 @@ function networkCode(network) {
 }
 
 function networkLabelFromKey(key) {
-  const k = String(key || '').toLowerCase();
-  if (k.includes('mtn')) return 'MTN';
-  if (k.includes('glo')) return 'GLO';
-  if (k.includes('airtel')) return 'AIRTEL';
-  if (k.includes('etisalat') || k.includes('9mobile')) return '9MOBILE';
+  const k = String(key || '').trim();
+  if (CODE_TO_NETWORK[k]) return CODE_TO_NETWORK[k];
+  const lower = k.toLowerCase();
+  if (lower.includes('mtn')) return 'MTN';
+  if (lower.includes('glo')) return 'GLO';
+  if (lower.includes('airtel')) return 'AIRTEL';
+  if (lower.includes('etisalat') || lower.includes('9mobile')) return '9MOBILE';
   return null;
 }
 
 function parseDataPlansPayload(data) {
   const plans = [];
-  if (!data || typeof data !== 'object') return plans;
 
-  const pushPlan = (network, item) => {
-    const planCode = item.plan || item.Plan || item.planid || item.PlanID || item.code || item.Code;
-    const planName = item.planname || item.PlanName || item.name || item.Name || planCode;
-    const amount = Number(item.amount || item.Amount || item.price || item.Price || 0);
+  const pushProduct = (network, p) => {
+    if (!p || typeof p !== 'object') return;
+    const planCode = p.PRODUCT_ID || p.PRODUCT_CODE || p.PRODUCT_SNO || p.plan || p.Plan;
+    const planName = p.PRODUCT_NAME || p.PRODUCTNAME || p.planname || p.PlanName || planCode;
+    const amount = Number(p.PRODUCT_AMOUNT || p.PRODUCTAMOUNT || p.amount || p.Amount || 0);
     if (!planCode || !amount) return;
     plans.push({
       planId: String(planCode),
-      variationCode: String(planCode),
+      variationCode: String(p.PRODUCT_ID || p.PRODUCT_CODE || planCode),
       planName: String(planName),
       amount,
       dataType: 'gifting',
@@ -242,17 +263,54 @@ function parseDataPlansPayload(data) {
     });
   };
 
-  if (Array.isArray(data)) {
-    for (const item of data) pushPlan(item.network || 'MTN', item);
-    return plans;
+  const mobileNetwork = data?.MOBILE_NETWORK || data?.mobile_network || data?.Mobile_Network;
+  if (mobileNetwork && typeof mobileNetwork === 'object') {
+    for (const [netKey, entries] of Object.entries(mobileNetwork)) {
+      const network = normalizeNetworkKey(netKey);
+      const list = Array.isArray(entries) ? entries : [entries];
+      for (const entry of list) {
+        const products = entry?.PRODUCT || entry?.Product || entry?.products;
+        if (Array.isArray(products)) {
+          for (const p of products) pushProduct(network, p);
+        } else if (entry && (entry.PRODUCT_ID || entry.PRODUCT_NAME)) {
+          pushProduct(network, entry);
+        }
+      }
+    }
+    if (plans.length) return plans;
   }
 
-  for (const [key, value] of Object.entries(data)) {
-    if (!Array.isArray(value)) continue;
-    const network = networkLabelFromKey(key) || 'MTN';
-    for (const item of value) pushPlan(network, item);
-  }
+  const walk = (node, networkHint = null) => {
+    if (!node) return;
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item, networkHint);
+      return;
+    }
+    if (typeof node !== 'object') return;
 
+    if (node.PRODUCT_ID || node.PRODUCT_NAME) {
+      pushProduct(networkHint || 'MTN', node);
+      return;
+    }
+
+    if (node.plan || node.Plan || node.planid || node.dataplan || node.DataPlan) {
+      pushProduct(networkHint || 'MTN', {
+        PRODUCT_ID: node.plan || node.Plan || node.planid,
+        PRODUCT_NAME: node.planname || node.PlanName || node.name,
+        PRODUCT_AMOUNT: node.amount || node.Amount,
+      });
+      return;
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+      const network = networkLabelFromKey(key) || networkHint;
+      if (Array.isArray(value) || (value && typeof value === 'object')) {
+        walk(value, network);
+      }
+    }
+  };
+
+  walk(data);
   return plans;
 }
 
@@ -266,9 +324,19 @@ async function getCatalogs() {
     request('APICableTVPackagesV2'),
   ]);
 
+  const dataRaw = dataRes.raw || {};
+  let dataPlans = parseDataPlansPayload(dataRaw);
+  if (!dataPlans.length && dataRaw && typeof dataRaw === 'object') {
+    const logger = require('../core/logger');
+    logger.warn('ClubKonnect data plans empty', {
+      keys: Object.keys(dataRaw).slice(0, 20),
+      preview: JSON.stringify(dataRaw).slice(0, 240),
+    });
+  }
+
   catalogCache = {
     at: now,
-    dataPlans: dataRes.ok ? parseDataPlansPayload(dataRes.raw) : [],
+    dataPlans,
     electricity: elecRes.raw || null,
     cable: cableRes.raw || null,
   };
