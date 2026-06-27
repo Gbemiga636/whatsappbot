@@ -1,28 +1,33 @@
 /**
  * Telecom / bills provider router — switch via .env
  *
- * BILLS_PROVIDER=autosyncng → AutoSyncNG (airtime, data, electricity, cable, betting)
- * BILLS_PROVIDER=vtpass      → VTPass (all services)
+ * BILLS_PROVIDER=clubkonnect → ClubKonnect (airtime, data, electricity, cable, betting)
+ * BILLS_PROVIDER=autosyncng  → AutoSyncNG
+ * BILLS_PROVIDER=vtpass      → VTPass
  */
 
 const config = require('../config');
 const vtpass = require('./vtpass');
 const autosyncng = require('./autosyncng');
+const clubkonnect = require('./clubkonnect');
 
 function getProviderName() {
   return (config.bills.provider || 'vtpass').toLowerCase();
 }
 
 function getProvider() {
-  return getProviderName() === 'autosyncng' ? autosyncng : vtpass;
+  const name = getProviderName();
+  if (name === 'clubkonnect') return clubkonnect;
+  if (name === 'autosyncng') return autosyncng;
+  return vtpass;
 }
 
 function vtpassConfigured() {
   return !!(config.bills.vtpass.apiKey && config.bills.vtpass.secretKey);
 }
 
-function autosyncngActive() {
-  return getProviderName() === 'autosyncng';
+function providerActive(name) {
+  return getProviderName() === name;
 }
 
 async function purchaseAirtime(opts) {
@@ -30,34 +35,42 @@ async function purchaseAirtime(opts) {
 }
 
 async function resolveDataPlan(network, planText) {
-  if (autosyncngActive()) {
-    return autosyncng.resolveDataPlan(network, planText);
+  if (providerActive('clubkonnect') || providerActive('autosyncng')) {
+    return getProvider().resolveDataPlan(network, planText);
   }
   return { ok: true, amount: 500, planName: planText, planId: planText };
 }
 
 async function fetchDataPlans(network) {
-  if (autosyncngActive()) return autosyncng.fetchDataPlans(network);
+  if (providerActive('clubkonnect') || providerActive('autosyncng')) {
+    return getProvider().fetchDataPlans(network);
+  }
   return [];
 }
 
 async function getElectricityDiscos() {
-  if (autosyncngActive()) return autosyncng.getElectricityDiscos();
+  if (providerActive('clubkonnect') || providerActive('autosyncng')) {
+    return getProvider().getElectricityDiscos();
+  }
   return [];
 }
 
 async function getBettingBookmakers() {
-  if (autosyncngActive()) return autosyncng.getBettingBookmakers();
+  if (providerActive('clubkonnect') || providerActive('autosyncng')) {
+    return getProvider().getBettingBookmakers();
+  }
   return [];
 }
 
 async function getCablePackages(billType) {
-  if (autosyncngActive()) return autosyncng.getCablePackages(billType);
+  if (providerActive('clubkonnect') || providerActive('autosyncng')) {
+    return getProvider().getCablePackages(billType);
+  }
   return [];
 }
 
 async function payBill(bill) {
-  if (autosyncngActive()) {
+  if (providerActive('autosyncng')) {
     const result = await autosyncng.payBill(bill);
     if (!result.ok && result.fallback === 'vtpass' && vtpassConfigured()) {
       const vtResult = await vtpass.payBill(bill);
@@ -73,7 +86,8 @@ async function payBill(bill) {
     }
     return result;
   }
-  return vtpass.payBill(bill);
+
+  return getProvider().payBill(bill);
 }
 
 async function getBalance() {

@@ -54,6 +54,7 @@ app.get('/health', (_req, res) => {
     supabaseServiceRole: hasServiceRoleKey(),
     paystack: !!config.payments.paystack.secretKey,
     billsProvider: config.bills.provider,
+    clubKonnect: !!(config.bills.clubkonnect.userId && config.bills.clubkonnect.apiKey),
     autoSyncNg: !!config.bills.autosyncng.apiKey,
     vtpass: !!config.bills.vtpass.apiKey,
     whatsapp: {

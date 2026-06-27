@@ -81,7 +81,7 @@ module.exports = {
   },
 
   bills: {
-    provider: (process.env.BILLS_PROVIDER || 'vtpass').trim().toLowerCase(), // vtpass | autosyncng
+    provider: (process.env.BILLS_PROVIDER || 'vtpass').trim().toLowerCase(), // vtpass | autosyncng | clubkonnect
     vtpass: {
       apiKey: (process.env.VTPASS_API_KEY || '').trim(),
       publicKey: (process.env.VTPASS_PUBLIC_KEY || '').trim(),
@@ -92,6 +92,11 @@ module.exports = {
       apiKey: (process.env.AUTOSYNCNG_API_KEY || '').trim(),
       apiPin: (process.env.AUTOSYNCNG_API_PIN || '').trim(),
       baseUrl: (process.env.AUTOSYNCNG_BASE_URL || 'https://autosyncng.com/api/v1').trim(),
+    },
+    clubkonnect: {
+      userId: (process.env.CLUBKONNECT_USER_ID || '').trim(),
+      apiKey: (process.env.CLUBKONNECT_API_KEY || '').trim(),
+      baseUrl: (process.env.CLUBKONNECT_BASE_URL || 'https://www.nellobytesystems.com').trim(),
     },
   },
 
