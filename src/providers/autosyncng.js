@@ -83,6 +83,17 @@ function getHeaders() {
   };
 }
 
+function friendlyFailureMessage(message) {
+  const text = String(message || '').trim();
+  if (/no gateway found/i.test(text)) {
+    return (
+      'This service is not active on our VTU supplier yet (gateway not connected). ' +
+      'Try another service or contact Mysogi support.'
+    );
+  }
+  return text || 'Transaction failed — check AutoSyncNG wallet balance and API PIN';
+}
+
 function extractMessage(data) {
   const parts = [
     data?.message,
@@ -122,15 +133,16 @@ function parseResponse(data) {
     };
   }
 
-  const failReason =
+  const failReason = friendlyFailureMessage(
     text ||
-    (topStatus && topStatus !== 'ok' ? `Provider returned status: ${topStatus}` : '') ||
-    (txStatus ? `Transaction status: ${txStatus}` : '') ||
-    'Transaction failed — check AutoSyncNG wallet balance and API PIN';
+      (topStatus && topStatus !== 'ok' ? `Provider returned status: ${topStatus}` : '') ||
+      (txStatus ? `Transaction status: ${txStatus}` : '')
+  );
 
   return {
     ok: false,
     message: failReason,
+    gatewayMissing: /no gateway found/i.test(text),
     transactionId: tx?.reference || tx?.request_ref || null,
     raw: data,
   };

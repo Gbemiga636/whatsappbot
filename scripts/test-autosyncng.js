@@ -44,14 +44,32 @@ async function run() {
     { type: 'electricity', provider: 'IKEDC', meter: '00000000000', amount: 1000 },
     { type: 'dstv', smartcard: '0000000000', amount: 15700 },
   ];
+  let gatewayIssues = 0;
   for (const bill of billChecks) {
     if (!config.bills.autosyncng.apiPin) {
       console.log(`[Bill ${bill.type}] skipped — set AUTOSYNCNG_API_PIN to test`);
       continue;
     }
     const result = await autosyncng.payBill(bill);
-    const label = result.ok ? 'API OK' : result.message.includes('insufficient') || result.message.includes('balance') ? 'API OK (needs funding)' : 'check';
-    console.log(`[Bill ${bill.type}]`, label, '—', result.message.slice(0, 80));
+    const isGateway = !!result.gatewayMissing || /no gateway found/i.test(result.message || '');
+    if (isGateway) gatewayIssues += 1;
+    const label = result.ok
+      ? 'API OK'
+      : result.message.includes('insufficient') || result.message.includes('balance')
+        ? 'API OK (needs funding)'
+        : isGateway
+          ? 'NO GATEWAY'
+          : 'check';
+    console.log(`[Bill ${bill.type}]`, label, '—', (result.message || '').slice(0, 80));
+  }
+
+  if (gatewayIssues > 0) {
+    console.log('\n⚠ GATEWAY SETUP REQUIRED on AutoSyncNG');
+    console.log('  1. Log in at https://autosyncng.com');
+    console.log('  2. Open Gateways (or SIM / automation) in your dashboard');
+    console.log('  3. Connect a gateway for each service/network you sell (MTN, Airtel, IKEDC, DSTV, etc.)');
+    console.log('  4. Ensure status shows "connected" before retrying purchases in WhatsApp');
+    console.log('  Until gateways are connected, purchases will fail and wallets auto-refund.\n');
   }
 
   if (!process.argv.includes('--purchase')) {
