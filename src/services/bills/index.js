@@ -182,7 +182,12 @@ class BillsService extends BaseService {
       );
     } else if (!purchase?.offeredCredit && !purchase?.prompted && !purchase?.insufficient) {
       const refundNote = purchase?.refunded ? '\n\n_Your wallet was refunded._' : '';
-      await this.reply(ctx.phone, `❌ ${purchase?.message || 'Payment could not be completed.'}${refundNote}`);
+      const reason =
+        purchase?.message ||
+        (purchase == null
+          ? 'Payment session lost. Tap *Confirm* again.'
+          : 'Payment could not be completed. Check your wallet balance and try again.');
+      await this.reply(ctx.phone, `❌ ${reason}${refundNote}`);
     }
     return this.showMenu(ctx);
   }

@@ -5,7 +5,7 @@
 const whatsapp = require('../whatsapp');
 const config = require('../config');
 const { createPinToken } = require('./pinToken');
-const { getSession, setSession } = require('../sessionStore');
+const { getSession, setSessionAndWait } = require('../sessionStore');
 const transactionPin = require('./transactionPin');
 const logger = require('../core/logger');
 
@@ -22,7 +22,7 @@ function buildPortalUrl(purpose, token) {
 async function storePending(phone, pendingPurchase) {
   if (!pendingPurchase) return;
   const session = getSession(phone) || { step: 'idle', data: {} };
-  setSession(phone, {
+  await setSessionAndWait(phone, {
     ...session,
     step: 'pin_web_pending',
     data: { ...session.data, pendingPurchase },
@@ -40,7 +40,7 @@ async function sendPortalLink(phone, { purpose, pendingPurchase, cta, message })
   }
 
   await storePending(phone, pendingPurchase);
-  const { token } = createPinToken(phone, purpose);
+  const { token } = createPinToken(phone, purpose, pendingPurchase);
   const url = buildPortalUrl(purpose, token);
 
   await whatsapp.sendText(

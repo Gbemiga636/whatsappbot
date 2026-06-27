@@ -28,13 +28,24 @@ function purgeNonces() {
   }
 }
 
-function createPinToken(phone, purpose) {
+function createPinToken(phone, purpose, pendingPurchase = null) {
   const payload = {
     phone: wallet.normalizePhone(phone),
     purpose,
     exp: Date.now() + ttlMs(),
     nonce: crypto.randomBytes(12).toString('hex'),
   };
+
+  if (pendingPurchase) {
+    payload.pending = {
+      method: pendingPurchase.method,
+      service: pendingPurchase.service,
+      baseAmount: pendingPurchase.baseAmount,
+      summaryText: pendingPurchase.summaryText,
+      purchaseId: pendingPurchase.purchaseId,
+      snapshot: pendingPurchase.snapshot || null,
+    };
+  }
   const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const sig = crypto.createHmac('sha256', secret()).update(data).digest('base64url');
   return { token: `${data}.${sig}`, payload };

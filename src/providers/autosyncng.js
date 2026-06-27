@@ -84,12 +84,18 @@ function getHeaders() {
 }
 
 function extractMessage(data) {
-  return String(
-    data?.message ||
-      data?.data?.transaction?.details ||
-      data?.data?.transaction?.message ||
-      ''
-  );
+  const parts = [
+    data?.message,
+    data?.data?.message,
+    data?.data?.transaction?.details,
+    data?.data?.transaction?.message,
+    data?.error,
+    typeof data?.errors === 'string' ? data.errors : null,
+    Array.isArray(data?.errors) ? data.errors.join(', ') : null,
+  ].filter(Boolean);
+
+  const text = parts.map((p) => String(p).trim()).find((p) => p.length > 0);
+  return text || '';
 }
 
 function parseResponse(data) {
@@ -116,9 +122,15 @@ function parseResponse(data) {
     };
   }
 
+  const failReason =
+    text ||
+    (topStatus && topStatus !== 'ok' ? `Provider returned status: ${topStatus}` : '') ||
+    (txStatus ? `Transaction status: ${txStatus}` : '') ||
+    'Transaction failed — check AutoSyncNG wallet balance and API PIN';
+
   return {
     ok: false,
-    message: text || 'Transaction failed',
+    message: failReason,
     transactionId: tx?.reference || tx?.request_ref || null,
     raw: data,
   };

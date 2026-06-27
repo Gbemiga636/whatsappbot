@@ -5,7 +5,7 @@
 const express = require('express');
 const transactionPin = require('../security/transactionPin');
 const { verifyPinToken, markPinTokenUsed } = require('../security/pinToken');
-const { getSession } = require('../sessionStore');
+const { getSession, loadSessionFromDb } = require('../sessionStore');
 const { sendText } = require('../whatsapp');
 const logger = require('../core/logger');
 
@@ -96,10 +96,20 @@ async function notifyWhatsApp(phone, text) {
   }
 }
 
-async function finishPendingPurchase(phone) {
-  const session = getSession(phone) || {};
-  const pending = session.data?.pendingPurchase;
-  if (!pending) return null;
+async function resolvePendingPurchase(phone, tokenPayload) {
+  const session = (await loadSessionFromDb(phone)) || getSession(phone) || {};
+  return session.data?.pendingPurchase || tokenPayload?.pending || null;
+}
+
+async function finishPendingPurchase(phone, tokenPayload) {
+  const pending = await resolvePendingPurchase(phone, tokenPayload);
+  if (!pending) {
+    return {
+      ok: false,
+      message:
+        'Purchase session expired. Return to WhatsApp, open the service again, and tap *Confirm* to retry.',
+    };
+  }
 
   const { resumePendingPurchase } = require('../security/pinGate');
   return resumePendingPurchase(phone, pending);
@@ -181,7 +191,7 @@ router.post('/set', async (req, res) => {
     '✅ *Transaction PIN set!*\n\nFuture payments authorize on the secure Mysogi page — never in chat.'
   );
 
-  const purchase = await finishPendingPurchase(payload.phone);
+  const purchase = await finishPendingPurchase(payload.phone, payload);
   if (purchase?.ok) {
     return res.send(
       successPage({
@@ -199,12 +209,11 @@ router.post('/set', async (req, res) => {
   );
 });
 
-router.get('/verify', (req, res) => {
+router.get('/verify', async (req, res) => {
   const payload = verifyPinToken(req.query.token);
   if (!payload || payload.purpose !== 'verify') return res.status(400).send(invalidTokenPage());
 
-  const session = getSession(payload.phone) || {};
-  const pending = session.data?.pendingPurchase;
+  const pending = await resolvePendingPurchase(payload.phone, payload);
   const summary = pending?.summaryText || '';
 
   return res.send(renderVerifyForm(req.query.token, summary));
@@ -215,8 +224,8 @@ router.post('/verify', async (req, res) => {
   if (!payload || payload.purpose !== 'verify') return res.status(400).send(invalidTokenPage());
 
   const pin = String(req.body.pin || '').replace(/\D/g, '');
-  const session = getSession(payload.phone) || {};
-  const summary = session.data?.pendingPurchase?.summaryText || '';
+  const pending = await resolvePendingPurchase(payload.phone, payload);
+  const summary = pending?.summaryText || '';
 
   const result = await transactionPin.verifyPin(payload.phone, pin);
   if (!result.ok) {
@@ -225,14 +234,13 @@ router.post('/verify', async (req, res) => {
 
   markPinTokenUsed(payload);
 
-  const purchase = await finishPendingPurchase(payload.phone);
+  const purchase = await finishPendingPurchase(payload.phone, payload);
 
   if (!purchase?.ok && !purchase?.awaitingPin && !purchase?.offeredCredit && !purchase?.prompted) {
-    await notifyWhatsApp(payload.phone, `❌ ${purchase?.message || 'Payment could not be completed.'}`);
     return res.send(
       successPage({
-        title: 'PIN verified',
-        message: esc(purchase?.message || 'Payment failed. Check WhatsApp for details.'),
+        title: 'Payment not completed',
+        message: esc(purchase?.message || 'Payment could not be completed. Check WhatsApp for details.'),
       })
     );
   }
