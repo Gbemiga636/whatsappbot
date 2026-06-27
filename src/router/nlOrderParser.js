@@ -7,6 +7,8 @@ const { isServicesQuestion } = require('./assistantPrompt');
 const BETTING_ALIASES = [
   { match: /bet\s*9ja|bet9ja/i, name: 'Bet9ja' },
   { match: /sporty\s*bet|sportybet/i, name: 'SportyBet' },
+  { match: /sporty?ing\s*(bet|acc|account)?|sporting\s*acc/i, name: 'SportyBet' },
+  { match: /\bsporty\b/i, name: 'SportyBet' },
   { match: /1x\s*bet|1xbet/i, name: '1xBet' },
   { match: /bet\s*king|betking/i, name: 'BetKing' },
   { match: /naira\s*bet|nairabet/i, name: 'NairaBet' },
@@ -97,7 +99,14 @@ function extractBettingCustomerId(text) {
 function isBettingRequest(text) {
   const t = String(text || '').toLowerCase();
   if (extractBettingBookmaker(text)) return true;
-  return /\b(betting|bookmaker|fund my bet|bet account|sporty bet)\b/i.test(t);
+  if (/\b(betting|bookmaker|fund my bet|bet account|sporty bet)\b/i.test(t)) return true;
+  if (/\b(fund|deposit|top.?up|load|credit)\b/i.test(t) && /\b(bet|sporty|sporting|bet9ja|1xbet|bookmaker|gambl)/i.test(t)) {
+    return true;
+  }
+  if (/\b(fund|deposit|top.?up)\b/i.test(t) && /\baccount\b/i.test(t) && /\b(sporty|sporting|bet)\b/i.test(t)) {
+    return true;
+  }
+  return false;
 }
 
 function extractMeterAndProvider(text) {
@@ -234,7 +243,7 @@ function isOrderPhrase(text) {
     isBettingRequest(text) ||
     /\b(buy|purchase|order|pay|recharge|send|top.?up|subscribe|renew|get|load|need|want|fund)\b/.test(t) ||
     /\b(help\s+me|can\s+you|please|i\s+want\s+to|i\s+need\s+to|i'd\s+like)\b.*\b(buy|get|purchase|pay|recharge|send|top.?up|fund)\b/.test(t) ||
-    /\b(airtime|data|dstv|gotv|electricity|bill|credit|mtn|glo|airtel|9mobile|betting|bet9ja|sportybet)\b/.test(t)
+    /\b(airtime|data|dstv|gotv|electricity|bill|credit|mtn|glo|airtel|9mobile|betting|bet9ja|sportybet|sporty|sporting)\b/.test(t)
   );
 }
 
@@ -305,6 +314,49 @@ function enrichIntent(intent, text) {
   return intent;
 }
 
+function detectAmbiguousIntents(text) {
+  const params = extractOrderParams(text);
+  const candidates = [];
+
+  if (isBettingRequest(text)) {
+    candidates.push({ service: 'bills', action: 'buy_betting', label: '🎰 Betting funding', params });
+  }
+  if (isDataRequest(text, params)) {
+    candidates.push({ service: 'airtime', action: 'buy_data', label: '📶 Data bundle', params });
+  }
+  if (isAirtimeRequest(text, params) && !isDataRequest(text, params)) {
+    candidates.push({ service: 'airtime', action: 'buy_airtime', label: '📱 Airtime', params });
+  } else if (isAirtimeRequest(text, params) && isDataRequest(text, params)) {
+    candidates.push({ service: 'airtime', action: 'buy_airtime', label: '📱 Airtime', params });
+  }
+  if (params.bill_type === 'electricity' || /electric|nepa|phcn|meter/i.test(text)) {
+    candidates.push({ service: 'bills', action: 'pay_bill', label: '⚡ Electricity', params });
+  }
+  if (/dstv|gotv|startimes|cable|tv subscription/i.test(text)) {
+    candidates.push({ service: 'bills', action: 'pay_bill', label: '📺 TV subscription', params });
+  }
+  if (isWalletTopUpRequest(text)) {
+    candidates.push({ service: 'wallet', action: 'topup', label: '💳 Wallet top-up', params });
+  }
+
+  const seen = new Set();
+  return candidates.filter((c) => {
+    const key = `${c.service}:${c.action}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function isWizardAnswer(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (/^(mtn|glo|airtel|9mobile|etisalat)$/i.test(t)) return true;
+  if (/^[₦]?\d{1,7}([.,]\d+)?$/.test(t)) return true;
+  if (/^0\d{10}$/.test(t) || /^234\d{10}$/.test(t)) return true;
+  return false;
+}
+
 function regexOrderIntent(text) {
   if (!text || text.length < 3) return null;
   const t = text.trim();
@@ -354,10 +406,6 @@ function regexOrderIntent(text) {
     return { service: 'bills', action: 'pay_bill', params, confidence: 'high' };
   }
 
-  if (/loan|borrow|bnpl|pay later|mysogi credit|activate credit|credit limit/i.test(t)) {
-    return { service: 'loans', action: 'open', params, confidence: 'medium' };
-  }
-
   if (/partner|plumber|cleaning|salon/i.test(t)) {
     return { service: 'partners', action: 'open', params, confidence: 'medium' };
   }
@@ -381,4 +429,6 @@ module.exports = {
   resolveTelecomAction,
   normalizeNetwork,
   extractBettingBookmaker,
+  detectAmbiguousIntents,
+  isWizardAnswer,
 };

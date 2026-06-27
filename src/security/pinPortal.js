@@ -43,17 +43,10 @@ async function sendPortalLink(phone, { purpose, pendingPurchase, cta, message })
   const { token } = createPinToken(phone, purpose, pendingPurchase);
   const url = buildPortalUrl(purpose, token);
 
-  await whatsapp.sendText(
-    phone,
-    `${message}\n\n` +
-      `🔗 *Secure link (tap to open):*\n${url}\n\n` +
-      `_If the button below does not work, use the link above._`
-  );
-
   try {
     await whatsapp.sendCtaUrl(
       phone,
-      '_Opens a secure Mysogi page in your browser. Your PIN is never saved in this chat._',
+      `${message}\n\n_Opens a secure Mysogi page in your browser. Your PIN is never saved in this chat._`,
       cta,
       url
     );
@@ -61,7 +54,7 @@ async function sendPortalLink(phone, { purpose, pendingPurchase, cta, message })
     return true;
   } catch (err) {
     const metaErr = err.response?.data?.error;
-    logger.error('PIN portal CTA button failed — text link sent as fallback', {
+    logger.error('PIN portal CTA button failed — sending text link fallback', {
       phone,
       purpose,
       error: metaErr?.message || err.message,
@@ -69,7 +62,9 @@ async function sendPortalLink(phone, { purpose, pendingPurchase, cta, message })
     });
     await whatsapp.sendText(
       phone,
-      '⚠️ Could not show the PIN button in WhatsApp. *Use the secure link in the message above* to set or confirm your PIN.'
+      `${message}\n\n` +
+        `🔗 *Secure link:*\n${url}\n\n` +
+        `_The button could not be shown — open the link above to continue._`
     );
     return true;
   }

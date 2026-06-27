@@ -124,7 +124,7 @@ module.exports = {
   },
 
   credit: {
-    enabled: process.env.FEATURE_CREDIT !== 'false',
+    enabled: process.env.FEATURE_CREDIT === 'true',
     minScore: Number(process.env.CREDIT_MIN_SCORE) || 250,
     maxSinglePurchase: Number(process.env.CREDIT_MAX_SINGLE) || 5000,
     interestPercent: Number(process.env.CREDIT_FEE_PERCENT) || 5,

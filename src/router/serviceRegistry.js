@@ -30,7 +30,7 @@ const SERVICES = [
   { id: 'food', tier: 'core', live: false },
   { id: 'shopping', tier: 'core', live: false },
   { id: 'banking', tier: 'core', live: false },
-  { id: 'loans', tier: 'core', live: true },
+  { id: 'loans', tier: 'core', live: false },
   { id: 'travel', tier: 'core', live: false },
   { id: 'business', tier: 'more', live: false },
   { id: 'healthcare', tier: 'more', live: false },

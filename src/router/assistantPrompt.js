@@ -6,9 +6,8 @@ const { SERVICES } = require('./serviceRegistry');
 
 const LIVE_SERVICE_DETAILS = [
   { id: 'wallet', name: 'Wallet', emoji: '💳', desc: 'Top up, check balance, send money to others' },
-  { id: 'airtime', name: 'Airtime & Data', emoji: '📱', desc: 'MTN, Glo, Airtel, 9mobile — airtime & data bundles' },
-  { id: 'bills', name: 'Bills & Pay', emoji: '⚡', desc: 'Electricity (all discos), DStv, GOtv, StarTimes, betting top-up' },
-  { id: 'loans', name: 'Loans & Credit', emoji: '💰', desc: 'Mysogi Credit — buy now pay later' },
+  { id: 'airtime', name: 'Airtime', emoji: '📱', desc: 'MTN, Glo, Airtel, 9mobile — airtime top-up' },
+  { id: 'bills', name: 'Bills & Pay', emoji: '⚡', desc: 'Electricity, DStv, GOtv, StarTimes, betting top-up' },
   { id: 'partners', name: 'Partner Services', emoji: '🤝', desc: 'Book plumbers, cleaners, delivery & more' },
   { id: 'ai', name: 'AI Assistant', emoji: '🤖', desc: 'Ask anything — homework, business, advice' },
   { id: 'ads', name: 'Ads Studio', emoji: '📢', desc: 'Create flyers, captions & ad campaigns with AI' },
@@ -56,13 +55,12 @@ function buildIntentRouterPrompt() {
     `- buy_data — params: network, plan (1GB etc), recipient, phone, period (daily|weekly|monthly)\n` +
     `- pay_bill — params: bill_type (electricity|dstv|gotv|startimes|betting), meter, provider, smartcard, amount, bookmaker, customer_id\n` +
     `- buy_betting — params: bookmaker (Bet9ja|SportyBet|1xBET etc), customer_id, amount\n` +
-    `- credit, activate_credit — loans hub\n` +
     `- open — open a service menu when user wants to browse it\n` +
     `- chat — general knowledge, advice, conversation NOT about ordering\n\n` +
     `CRITICAL rules:\n` +
     `- "airtime" / "recharge" / "load my line" / "buy credit" (with network) = buy_airtime NOT buy_data\n` +
     `- buy_data ONLY for data, GB, MB, bundles, internet plans\n` +
-    `- "fund bet9ja" / "sportybet" / "betting" = buy_betting or pay_bill with bill_type betting\n` +
+    `- "fund bet9ja" / "sportybet" / "fund my sporting account" / "betting" = buy_betting\n` +
     `- "what services" / "what do you offer" = list_services\n` +
     `- If user wants to buy/pay/fund something, use purchase actions — NOT chat\n` +
     `- Extract ALL details from message into params (network, amount, phone, plan)\n` +
@@ -70,6 +68,7 @@ function buildIntentRouterPrompt() {
     `Examples:\n` +
     `"what services do you offer" → {"service":null,"action":"list_services","params":{},"confidence":"high"}\n` +
     `"fund sportybet 5000" → {"service":"bills","action":"buy_betting","params":{"bookmaker":"SportyBet","amount":5000},"confidence":"high"}\n` +
+    `"fund my sporting account" → {"service":"bills","action":"buy_betting","params":{"bookmaker":"SportyBet"},"confidence":"high"}\n` +
     `"buy mtn 1gb weekly data" → {"service":"airtime","action":"buy_data","params":{"network":"MTN","plan":"1GB","period":"weekly","recipient":"self"},"confidence":"high"}\n` +
     `"get me airtime" → {"service":"airtime","action":"buy_airtime","params":{"recipient":"self"},"confidence":"high"}\n` +
     `"I need 500 naira MTN airtime" → {"service":"airtime","action":"buy_airtime","params":{"network":"MTN","amount":500,"recipient":"self"},"confidence":"high"}\n` +

@@ -6,15 +6,20 @@
 const whatsapp = require('../whatsapp');
 const { getSession, setSession } = require('../sessionStore');
 const { getUser, isAuthenticated } = require('../userStore');
-const { SERVICES, getService } = require('./serviceRegistry');
+const { getService } = require('./serviceRegistry');
 const wallet = require('../wallet/walletService');
-const config = require('../config');
-const partnerStore = require('../stores/partnerStore');
 
 const SUPER_MENU_STEP = 'super_menu';
 
-const PAGE1_IDS = ['wallet', 'loans', 'airtime', 'bills', 'partners', 'ai'];
-const PAGE2_IDS = ['ads', 'banking', 'food', 'shopping', 'travel', 'business', 'healthcare', 'marketplace', 'education'];
+const MAIN_VTU_ROWS = [
+  { id: 'menu_airtime', title: '💳 Airtime', description: 'MTN, Glo, Airtel, 9mobile' },
+  { id: 'menu_data', title: '📶 Data', description: 'Daily, weekly & monthly bundles' },
+  { id: 'menu_electric', title: '⚡ Electricity', description: 'All discos' },
+  { id: 'menu_tv', title: '📺 TV subscription', description: 'DStv, GOtv, StarTimes' },
+  { id: 'menu_betting', title: '🎰 Betting', description: 'Fund betting account' },
+];
+
+const MORE_SERVICE_IDS = ['partners', 'ads', 'banking', 'food', 'shopping', 'travel'];
 
 function formatDisplayName(user) {
   if (!user) return 'there';
@@ -32,6 +37,24 @@ function buildRows(serviceIds) {
     .map((s) => s.menuRow());
 }
 
+function buildMainMenuRows(loggedIn) {
+  const rows = [...MAIN_VTU_ROWS];
+
+  if (loggedIn) {
+    rows.push({ id: 'auth_logout', title: '🚪 Log out', description: 'Sign out of account' });
+    rows.push({ id: 'svc_wallet', title: '💳 My wallet', description: 'Balance & top-up' });
+    rows.push({ id: 'svc_ai', title: '🤖 AI assistant', description: 'Ask anything' });
+    rows.push({ id: 'svc_more_menu', title: '➕ More services', description: 'Ads, partners & more' });
+  } else {
+    rows.push({ id: 'auth_login', title: '🔐 Log in', description: 'Email & password' });
+    rows.push({ id: 'auth_signup', title: '✨ Sign up', description: 'Create account' });
+    rows.push({ id: 'svc_ai', title: '🤖 AI assistant', description: 'Ask anything' });
+    rows.push({ id: 'svc_more_menu', title: '➕ More services', description: 'Browse what\'s available' });
+  }
+
+  return rows.slice(0, 10);
+}
+
 async function showSuperAppMenu(phone, options = {}) {
   const user = getUser(phone);
   const loggedIn = isAuthenticated(phone);
@@ -42,19 +65,7 @@ async function showSuperAppMenu(phone, options = {}) {
     ? `*Welcome, ${name}!* 🌍\n💳 Wallet: *${wallet.formatNaira(balance)}*`
     : `*Welcome to Mysogi* 🌍`;
 
-  const rows = buildRows(PAGE1_IDS);
-
-  if (loggedIn) {
-    rows.push({ id: 'auth_profile', title: '👤 My profile', description: (user.email || 'Account').slice(0, 72) });
-    rows.push({ id: 'auth_logout', title: '🚪 Log out', description: 'Sign out of account' });
-    rows.push({ id: 'svc_more_menu', title: '➕ More services', description: 'All services & settings' });
-  } else {
-    rows.push({ id: 'auth_login', title: '🔐 Log in', description: 'Email & password' });
-    rows.push({ id: 'auth_signup', title: '✨ Sign up', description: 'Create account' });
-  }
-
-  // Hard cap — WhatsApp rejects lists with >10 rows
-  const safeRows = rows.slice(0, 10);
+  const safeRows = buildMainMenuRows(loggedIn);
 
   await whatsapp.sendList(
     phone,
@@ -79,39 +90,19 @@ async function showSuperAppMenu(phone, options = {}) {
       ]
     );
   }
-
-  if (loggedIn && config.credit?.enabled) {
-    try {
-      const creditScoring = require('../credit/creditScoring');
-      const profile = await creditScoring.getProfile(phone);
-      if (!profile.activated && profile.score >= (config.credit.minScore || 250)) {
-        await whatsapp.sendButtons(
-          phone,
-          `⚡ *You're eligible for Mysogi Credit*\n\nScore: *${profile.score}* · Limit up to ${wallet.formatNaira(profile.credit_limit)}`,
-          [
-            { id: 'credit_activate', title: 'Activate credit' },
-            { id: 'svc_loans', title: 'Learn more' },
-          ]
-        );
-      }
-    } catch (_) {
-      /* credit tables may not exist yet */
-    }
-  }
 }
 
 async function showMoreServicesMenu(phone) {
   const rows = [
-    ...buildRows(PAGE2_IDS),
-    { id: 'svc_agriculture', title: '🌾 Agriculture', description: 'Coming soon' },
-    { id: 'svc_jobs', title: '💼 Jobs', description: 'Coming soon' },
-    { id: 'auth_logout', title: '🚪 Log out', description: 'Switch account' },
+    ...buildRows(MORE_SERVICE_IDS),
+    { id: 'svc_education', title: '📚 Education', description: 'Coming soon' },
+    { id: 'svc_healthcare', title: '🏥 Healthcare', description: 'Coming soon' },
     { id: 'svc_main_menu', title: '⬅️ Back', description: 'Main menu' },
   ].slice(0, 10);
 
   await whatsapp.sendList(
     phone,
-    '*More services*\n\nSome features are coming soon.',
+    '*More services*\n\nPartners, ads, and more — some features are coming soon.',
     'More options',
     [{ title: 'More', rows }]
   );

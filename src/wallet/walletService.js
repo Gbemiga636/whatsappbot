@@ -525,14 +525,6 @@ async function tryCompletePendingTopUp(phone) {
 
   const alreadyNotified = await wasTopUpWhatsAppNotified(reference);
   if (!alreadyNotified) {
-    if (!result.alreadyProcessed && result.phone) {
-      const credit = require('../credit/creditService');
-      const repay = await credit.autoRepayOnTopUp(result.phone);
-      if (repay?.repaid > 0) {
-        result.balance = repay.balance;
-        result.creditRepaid = repay.repaid;
-      }
-    }
     await notifyWalletTopUpSuccess({
       phone: result.phone,
       payerPhone: result.payerPhone,
@@ -540,7 +532,6 @@ async function tryCompletePendingTopUp(phone) {
       balance: result.balance,
       reference,
       isGift: result.isGift,
-      creditRepaid: result.creditRepaid,
     });
   }
 

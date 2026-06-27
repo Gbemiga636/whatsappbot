@@ -1,6 +1,6 @@
 const BaseService = require('../BaseService');
 const telecom = require('../../providers/telecomProvider');
-const { confirmAndPay, confirmAndPayWithCredit, wallet, credit } = require('../../wallet/purchaseHelper');
+const { confirmAndPay, wallet } = require('../../wallet/purchaseHelper');
 const { paginateItems, formatBundleTitle, formatAmountTitle } = require('../../utils/vtuCatalog');
 
 const ELECTRIC_AMOUNTS = [1000, 2000, 5000, 10000, 20000];
@@ -35,6 +35,18 @@ class BillsService extends BaseService {
         { id: 'bill_gotv', title: '📺 GOtv', description: 'Pick bouquet' },
         { id: 'bill_startimes', title: '📺 StarTimes', description: 'Pick bouquet' },
         { id: 'bill_betting', title: '🎰 Betting', description: 'Fund account' },
+      ],
+    }]);
+    await this.updateSession(ctx.phone, { step: this.STEPS.MENU, data: {} });
+  }
+
+  async showTvPicker(ctx) {
+    await this.list(ctx.phone, '*📺 TV subscription*\n\nSelect your provider:', 'TV', [{
+      title: 'Provider',
+      rows: [
+        { id: 'bill_dstv', title: '📺 DStv', description: 'Pick bouquet' },
+        { id: 'bill_gotv', title: '📺 GOtv', description: 'Pick bouquet' },
+        { id: 'bill_startimes', title: '📺 StarTimes', description: 'Pick bouquet' },
       ],
     }]);
     await this.updateSession(ctx.phone, { step: this.STEPS.MENU, data: {} });
@@ -145,8 +157,6 @@ class BillsService extends BaseService {
       { id: 'bill_confirm', title: '✅ Pay now' },
       { id: 'bill_cancel', title: 'Cancel' },
     ];
-    const eligibility = await credit.checkEligibility(ctx.phone, bill.amount);
-    if (eligibility.ok) buttons.splice(1, 0, { id: 'bill_credit', title: '⚡ Use credit' });
 
     let summary = `Type: *${bill.type}*\nAmount: *${wallet.formatNaira(bill.amount)}*`;
     if (bill.type === 'electricity') summary += `\nDisco: ${bill.providerName || bill.provider}\nMeter: ${bill.meter}`;
@@ -158,16 +168,14 @@ class BillsService extends BaseService {
     await this.updateSession(ctx.phone, { step: this.STEPS.CONFIRM, data: { bill } });
   }
 
-  async executePayment(ctx, bill, useCredit = false) {
+  async executePayment(ctx, bill) {
     const opts = {
       service: 'bills',
       baseAmount: bill.amount,
       summaryText: `${bill.type} payment`,
       execute: () => telecom.payBill({ ...bill, phone: ctx.phone }),
     };
-    const purchase = useCredit
-      ? await confirmAndPayWithCredit(ctx.phone, opts)
-      : await confirmAndPay(ctx.phone, opts);
+    const purchase = await confirmAndPay(ctx.phone, opts);
 
     if (purchase?.awaitingPin || purchase?.awaitingPinSetup || purchase?.locked) return;
 
@@ -180,7 +188,7 @@ class BillsService extends BaseService {
           `${purchase.result?.message ? `${purchase.result.message}\n` : ''}` +
           `Paid: ${wallet.formatNaira(purchase.total)}\nBalance: ${wallet.formatNaira(purchase.balance)}`
       );
-    } else if (!purchase?.offeredCredit && !purchase?.prompted && !purchase?.insufficient) {
+    } else if (!purchase?.prompted && !purchase?.insufficient) {
       const refundNote = purchase?.refunded ? '\n\n_Your wallet was refunded._' : '';
       const reason =
         purchase?.message ||
@@ -257,10 +265,7 @@ class BillsService extends BaseService {
     }
 
     if (choice === 'bill_confirm' && data.bill) {
-      return this.executePayment(ctx, data.bill, false);
-    }
-    if (choice === 'bill_credit' && data.bill) {
-      return this.executePayment(ctx, data.bill, true);
+      return this.executePayment(ctx, data.bill);
     }
 
     if (choice?.startsWith('bill_amt_') && data.bill) {

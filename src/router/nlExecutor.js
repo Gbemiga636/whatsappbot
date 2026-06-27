@@ -16,7 +16,7 @@ const ai = require('../providers/openai');
 const { setSession, getSession } = require('../sessionStore');
 const { createContext } = require('../core/context');
 const { getUser } = require('../userStore');
-const { isAffirmation, isDenial, isOrderPhrase, isPurchaseIntent } = require('./nlOrderParser');
+const { isAffirmation, isDenial, isOrderPhrase, isPurchaseIntent, isBettingRequest, isWalletTopUpRequest, detectAmbiguousIntents, isWizardAnswer, regexOrderIntent } = require('./nlOrderParser');
 const {
   buildServicesListText,
   buildChatAssistantPrompt,
@@ -37,10 +37,85 @@ const {
 } = require('./nlOrderDraft');
 
 const NL_GATHER_STEP = 'nl_gather';
+const NL_DISAMBIGUATE_STEP = 'nl_disambiguate';
+
+function isNewPurchaseMessage(text, session) {
+  if (isServicesQuestion(text)) return true;
+  if (isBettingRequest(text)) return true;
+  if (isWalletTopUpRequest(text)) return true;
+  if (/^(balance|my balance|wallet balance|check balance)$/i.test(String(text || '').trim())) return true;
+
+  const fresh = regexOrderIntent(text);
+  if (fresh && isPurchaseIntent(fresh)) return true;
+
+  if (isNewOrderOverride(text, session?.data?.nlDraft)) return true;
+
+  if (session?.step === NL_GATHER_STEP || session?.data?.nlDraft) return true;
+
+  if (isOrderPhrase(text) && !isWizardAnswer(text)) {
+    const params = require('./nlOrderParser').extractOrderParams(text);
+    if (
+      params.bookmaker ||
+      params.bill_type ||
+      params.network ||
+      params.plan ||
+      params.meter ||
+      /\b(fund|bet|airtime|data|dstv|electricity|wallet|sporty|sporting)\b/i.test(text)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function askDisambiguation(phone, candidates, session) {
+  const options = candidates.slice(0, 3);
+  await whatsapp.sendButtons(
+    phone,
+    '*Which service did you mean?*\n\nTap the closest match:',
+    options.map((c, i) => ({ id: `nl_pick_${i}`, title: c.label.slice(0, 24) }))
+  );
+  setSession(phone, {
+    ...session,
+    step: NL_DISAMBIGUATE_STEP,
+    activeService: null,
+    data: {
+      ...(session.data?.nlHistory ? { nlHistory: session.data.nlHistory } : {}),
+      nlCandidates: options,
+    },
+  });
+  return true;
+}
+
+async function handleDisambiguationChoice(phone, choice, session) {
+  const idx = Number(String(choice).replace('nl_pick_', ''));
+  const picked = session?.data?.nlCandidates?.[idx];
+  if (!picked) {
+    await whatsapp.sendText(phone, 'That option expired. Say what you need again, e.g. *fund my sportybet account*.');
+    return true;
+  }
+  const intent = {
+    service: picked.service,
+    action: picked.action,
+    params: picked.params || {},
+    confidence: 'high',
+  };
+  return executeNaturalLanguage(phone, intent, { phone, session: getSession(phone), text: '' });
+}
 
 /** Wizard steps where NL must not re-start orders (prevents duplicate lists/menus). */
 const STRUCTURED_FLOW_STEPS = {
   airtime: new Set([
+    'airtime_pick_network',
+    'airtime_pick_recipient',
+    'airtime_enter_phone',
+    'airtime_pick_period',
+    'airtime_pick_bundle',
+    'airtime_pick_amount',
+    'airtime_enter_amount',
+    'airtime_confirm',
+    // legacy step ids (sessions mid-flow before deploy)
     'pick_network',
     'pick_recipient',
     'enter_phone',
@@ -158,10 +233,28 @@ async function launchIntoTelecomFlow(phone, partial, ctx) {
         return airtimeSvc.showConfirm(ctxObj, airtime);
       }
     }
-    if (airtime.period) {
-      return airtimeSvc.showDataBundles(ctxObj, airtime, `data_period_${airtime.period}`, 0);
+
+    if (!airtime.network) {
+      return airtimeSvc.showNetworkPicker(ctxObj, 'data');
     }
-    return airtimeSvc.showDataBundles(ctxObj, airtime, 'data_period_all', 0);
+
+    const draft = { ...airtime, type: 'data' };
+    const period = airtime.period
+      ? `data_period_${String(airtime.period).replace('data_period_', '')}`
+      : airtime.dataPeriod;
+
+    if (!period || !['data_period_daily', 'data_period_weekly', 'data_period_monthly'].includes(period)) {
+      return airtimeSvc.showDataPeriodPicker(ctxObj, draft);
+    }
+
+    draft.dataPeriod = period;
+
+    if (draft.recipientType === 'other' && !draft.phone) {
+      return airtimeSvc.showRecipientPicker(ctxObj, draft);
+    }
+
+    draft.phone = draft.phone || toLocalPhone(phone);
+    return airtimeSvc.showDataBundles(ctxObj, draft, period, 0);
   }
 
   if (airtime.amount && airtime.amount >= 50) {
@@ -172,7 +265,8 @@ async function launchIntoTelecomFlow(phone, partial, ctx) {
 
 async function resolveBookmakerFromCatalog(name) {
   const bookmakers = await telecom.getBettingBookmakers();
-  const search = String(name || '').toLowerCase().replace(/\s/g, '');
+  let search = String(name || '').toLowerCase().replace(/\s/g, '');
+  if (/sporty?ing|sporty/.test(search)) search = 'sportybet';
   return bookmakers.find((b) => {
     const bn = b.name.toLowerCase().replace(/\s/g, '');
     const bc = (b.code || '').toLowerCase();
@@ -229,13 +323,10 @@ async function routeToServiceLazy(phone, serviceId, ctx) {
 async function showAirtimeConfirm(phone, airtime) {
   const svc = getService('airtime');
   const pricing = wallet.formatWalletSummary(airtime.amount);
-  const { credit } = require('../wallet/purchaseHelper');
   const buttons = [
     { id: 'air_confirm', title: 'Pay from wallet' },
     { id: 'air_cancel', title: 'Cancel' },
   ];
-  const eligibility = await credit.checkEligibility(phone, airtime.amount);
-  if (eligibility.ok) buttons.splice(1, 0, { id: 'air_credit', title: '⚡ Pay with credit' });
 
   await svc.buttons(
     phone,
@@ -386,13 +477,10 @@ async function startAirtimeFromIntent(phone, params, type = 'airtime', ctx) {
 async function showBillConfirm(phone, bill) {
   const svc = getService('bills');
   const pricing = wallet.formatWalletSummary(bill.amount);
-  const { credit } = require('../wallet/purchaseHelper');
   const buttons = [
     { id: 'bill_confirm', title: 'Pay from wallet' },
     { id: 'bill_cancel', title: 'Cancel' },
   ];
-  const eligibility = await credit.checkEligibility(phone, bill.amount);
-  if (eligibility.ok) buttons.splice(1, 0, { id: 'bill_credit', title: '⚡ Pay with credit' });
 
   const detail =
     bill.type === 'electricity'
@@ -438,7 +526,8 @@ async function startBettingFromIntent(phone, params, ctx) {
 }
 
 async function tryConfirmFromText(phone, text, session) {
-  if (session.step !== 'confirm' || !session.activeService) return false;
+  const confirmSteps = new Set(['confirm', 'airtime_confirm']);
+  if (!confirmSteps.has(session.step) || !session.activeService) return false;
 
   if (isDenial(text)) {
     await whatsapp.sendText(phone, 'Order cancelled.');
@@ -469,6 +558,27 @@ async function tryConfirmFromText(phone, text, session) {
 }
 
 async function executeNaturalLanguage(phone, intent, ctx) {
+  if (!intent) return false;
+
+  try {
+    return await _executeNaturalLanguage(phone, intent, ctx);
+  } catch (err) {
+    logger.error('NL execute failed', {
+      phone,
+      service: intent.service,
+      action: intent.action,
+      error: err.message,
+      stack: err.stack,
+    });
+    await whatsapp.sendText(
+      phone,
+      `I couldn't finish that order just now.\n\nTry again, tap *menu*, or continue with the buttons above if you're mid-flow.`
+    );
+    return true;
+  }
+}
+
+async function _executeNaturalLanguage(phone, intent, ctx) {
   if (!intent) return false;
 
   const { action, params = {} } = intent;
@@ -559,15 +669,6 @@ async function executeNaturalLanguage(phone, intent, ctx) {
     return startBettingFromIntent(phone, params, ctx);
   }
 
-  if (action === 'activate_credit') {
-    const { handleCreditAction } = require('../credit/creditHandler');
-    return handleCreditAction(phone, 'credit_activate', session);
-  }
-
-  if (action === 'credit' || service === 'loans') {
-    service = 'loans';
-  }
-
   if (!service) return false;
 
   if (!LIVE_SERVICES.includes(service)) {
@@ -590,6 +691,7 @@ async function executeNaturalLanguage(phone, intent, ctx) {
 
 function shouldTryNaturalLanguage(session, incoming) {
   if (!config.features.naturalLanguage) return false;
+  if (incoming.buttonId?.startsWith('nl_pick_')) return true;
   if (!incoming.text || incoming.buttonId || incoming.listId) return false;
 
   const text = incoming.text.trim();
@@ -597,8 +699,14 @@ function shouldTryNaturalLanguage(session, incoming) {
 
   if (/^(menu|home|start|0|cancel|stop)$/i.test(text)) return false;
 
-  // Let the active service wizard handle input — avoids duplicate pickers/menus
-  if (isStructuredServiceFlow(session)) return false;
+  if (session.step === NL_DISAMBIGUATE_STEP) return false;
+
+  if (isStructuredServiceFlow(session)) {
+    if (isWizardAnswer(text) && !isBettingRequest(text) && !isNewOrderOverride(text, session?.data?.nlDraft)) {
+      return false;
+    }
+    return isNewPurchaseMessage(text, session);
+  }
 
   if (isServicesQuestion(text)) return true;
 
@@ -609,7 +717,8 @@ function shouldTryNaturalLanguage(session, incoming) {
     return true;
   }
 
-  if (session.step === 'confirm' && (isAffirmation(text) || isDenial(text))) return true;
+  const confirmSteps = new Set(['confirm', 'airtime_confirm']);
+  if (confirmSteps.has(session.step) && (isAffirmation(text) || isDenial(text))) return true;
 
   if (isOrderPhrase(text)) {
     if (session.activeService && session.step !== NL_GATHER_STEP && /^[₦]?\d+([.,]\d+)?$/.test(text)) {
@@ -632,49 +741,100 @@ function shouldTryNaturalLanguage(session, incoming) {
 }
 
 async function tryNaturalLanguageRoute(phone, incoming, ctx) {
-  const session = ctx.session || getSession(phone);
-  if (!shouldTryNaturalLanguage(session, incoming)) return false;
+  try {
+    const session = ctx.session || getSession(phone);
 
-  const { requiresAuth, promptLoginRequired } = require('./authHandler');
-
-  if (await tryConfirmFromText(phone, incoming.text, session)) return true;
-
-  if (await tryContinueDraft(phone, incoming.text, session)) return true;
-
-  const { parseNaturalLanguage } = require('./intentRouter');
-  const intent = await parseNaturalLanguage(incoming.text);
-
-  if (!intent) {
-    if (isGeneralQuestion(incoming.text) && config.openai.apiKey) {
-      return handleAiChat(phone, incoming.text, session);
+    if (incoming.buttonId?.startsWith('nl_pick_')) {
+      return handleDisambiguationChoice(phone, incoming.buttonId, session);
     }
-    return false;
-  }
 
-  const publicActions = new Set(['menu', 'help', 'list_services', 'login', 'signup', 'chat', 'greet']);
-  if (requiresAuth(phone) && !publicActions.has(intent.action)) {
-    await promptLoginRequired(phone);
+    if (!shouldTryNaturalLanguage(session, incoming)) return false;
+
+    const { requiresAuth, promptLoginRequired } = require('./authHandler');
+
+    if (await tryConfirmFromText(phone, incoming.text, session)) return true;
+
+    if (await tryContinueDraft(phone, incoming.text, session)) return true;
+
+    const { parseNaturalLanguage } = require('./intentRouter');
+    const { enrichIntent } = require('./nlOrderParser');
+    let intent = await parseNaturalLanguage(incoming.text);
+
+    if (!intent) {
+      const fallback = regexOrderIntent(incoming.text);
+      if (fallback) intent = enrichIntent(fallback, incoming.text);
+    }
+
+    if (!intent) {
+      if (isGeneralQuestion(incoming.text) && config.openai.apiKey) {
+        return handleAiChat(phone, incoming.text, session);
+      }
+      if (isOrderPhrase(incoming.text)) {
+        const candidates = detectAmbiguousIntents(incoming.text);
+        if (candidates.length >= 2) {
+          return askDisambiguation(phone, candidates, session);
+        }
+        if (candidates.length === 1) {
+          intent = {
+            service: candidates[0].service,
+            action: candidates[0].action,
+            params: candidates[0].params || {},
+            confidence: 'medium',
+          };
+        }
+      }
+      if (!intent) return false;
+    }
+
+    const ambiguous = detectAmbiguousIntents(incoming.text);
+    if (
+      ambiguous.length >= 2 &&
+      intent.confidence !== 'high' &&
+      isPurchaseIntent(intent)
+    ) {
+      const intentKey = `${intent.service}:${intent.action}`;
+      const otherMatches = ambiguous.filter((c) => `${c.service}:${c.action}` !== intentKey);
+      if (otherMatches.length >= 1) {
+        return askDisambiguation(phone, ambiguous, session);
+      }
+    }
+
+    const publicActions = new Set(['menu', 'help', 'list_services', 'login', 'signup', 'chat', 'greet']);
+    if (requiresAuth(phone) && !publicActions.has(intent.action)) {
+      await promptLoginRequired(phone);
+      return true;
+    }
+
+    if (intent.confidence === 'low' && !intent.service) {
+      if (intent.action === 'chat' || isGeneralQuestion(incoming.text)) {
+        return handleAiChat(phone, incoming.text, session);
+      }
+      if (!isOrderPhrase(incoming.text)) return false;
+    }
+
+    if (intent.confidence === 'low' && intent.action === 'chat' && intent.service) {
+      intent.action = 'open';
+    }
+
+    if (intent.confidence === 'low' && isOrderPhrase(incoming.text) && intent.action === 'open') {
+      const { resolveTelecomAction } = require('./nlOrderParser');
+      const telecomAction = resolveTelecomAction(incoming.text, intent.params || {}, intent.action);
+      if (telecomAction) intent.action = telecomAction;
+    }
+
+    return executeNaturalLanguage(phone, intent, ctx);
+  } catch (err) {
+    logger.error('NL route failed', {
+      phone,
+      error: err.message,
+      stack: err.stack,
+    });
+    await whatsapp.sendText(
+      phone,
+      `I didn't quite catch that.\n\nTry again — e.g. *fund my sportybet account* — or type *menu*.`
+    );
     return true;
   }
-
-  if (intent.confidence === 'low' && !intent.service) {
-    if (intent.action === 'chat' || isGeneralQuestion(incoming.text)) {
-      return handleAiChat(phone, incoming.text, session);
-    }
-    if (!isOrderPhrase(incoming.text)) return false;
-  }
-
-  if (intent.confidence === 'low' && intent.action === 'chat' && intent.service) {
-    intent.action = 'open';
-  }
-
-  if (intent.confidence === 'low' && isOrderPhrase(incoming.text) && intent.action === 'open') {
-    const { resolveTelecomAction } = require('./nlOrderParser');
-    const telecomAction = resolveTelecomAction(incoming.text, intent.params || {}, intent.action);
-    if (telecomAction) intent.action = telecomAction;
-  }
-
-  return executeNaturalLanguage(phone, intent, ctx);
 }
 
 module.exports = {
@@ -683,5 +843,7 @@ module.exports = {
   tryNaturalLanguageRoute,
   tryContinueDraft,
   isStructuredServiceFlow,
+  handleDisambiguationChoice,
   NL_GATHER_STEP,
+  NL_DISAMBIGUATE_STEP,
 };

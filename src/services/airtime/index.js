@@ -1,10 +1,9 @@
 const BaseService = require('../BaseService');
 const telecom = require('../../providers/telecomProvider');
-const { confirmAndPay, confirmAndPayWithCredit, wallet, credit } = require('../../wallet/purchaseHelper');
+const { confirmAndPay, wallet } = require('../../wallet/purchaseHelper');
 const {
   filterBundlesByPeriod,
   paginateItems,
-  formatBundleTitle,
   formatBundleListRow,
   formatAmountTitle,
   PAGE_SIZE,
@@ -13,6 +12,7 @@ const {
 const NETWORKS = ['MTN', 'GLO', 'Airtel', '9mobile'];
 const AIRTIME_AMOUNTS = [100, 200, 500, 1000, 2000, 5000];
 const MIN_AIRTIME_AMOUNT = 100;
+const DATA_PERIODS = ['daily', 'weekly', 'monthly'];
 
 function toLocalPhone(phone) {
   const digits = String(phone).replace(/\D/g, '');
@@ -28,28 +28,43 @@ function networkFromChoice(choice) {
   return map[key] || null;
 }
 
+function isDataFlow(airtime) {
+  return airtime?.type === 'data';
+}
+
+function isAirtimeFlow(airtime) {
+  return airtime?.type === 'airtime';
+}
+
+function normalizeDataPeriod(period) {
+  const key = String(period || '').replace('data_period_', '').toLowerCase();
+  return DATA_PERIODS.includes(key) ? key : null;
+}
+
 function periodLabel(period) {
-  const key = String(period || '').replace('data_period_', '');
-  if (!key || key === 'all') return 'ALL';
-  return key.toUpperCase();
+  const key = normalizeDataPeriod(period);
+  if (key === 'daily') return 'Daily';
+  if (key === 'weekly') return 'Weekly';
+  if (key === 'monthly') return 'Monthly';
+  return '';
 }
 
 class AirtimeService extends BaseService {
   constructor() {
     super('airtime', {
-      name: 'Airtime & Data',
+      name: 'Airtime',
       emoji: '📱',
-      description: 'Buy airtime & data bundles',
+      description: 'Buy airtime top-up',
       steps: {
-        PICK_TYPE: 'pick_type',
-        PICK_NETWORK: 'pick_network',
-        PICK_RECIPIENT: 'pick_recipient',
-        ENTER_PHONE: 'enter_phone',
-        PICK_PERIOD: 'pick_period',
-        PICK_BUNDLE: 'pick_bundle',
-        PICK_AMOUNT: 'pick_amount',
-        ENTER_AMOUNT: 'enter_amount',
-        CONFIRM: 'confirm',
+        PICK_TYPE: 'airtime_pick_type',
+        PICK_NETWORK: 'airtime_pick_network',
+        PICK_RECIPIENT: 'airtime_pick_recipient',
+        ENTER_PHONE: 'airtime_enter_phone',
+        PICK_PERIOD: 'airtime_pick_period',
+        PICK_BUNDLE: 'airtime_pick_bundle',
+        PICK_AMOUNT: 'airtime_pick_amount',
+        ENTER_AMOUNT: 'airtime_enter_amount',
+        CONFIRM: 'airtime_confirm',
       },
     });
   }
@@ -63,37 +78,54 @@ class AirtimeService extends BaseService {
         { id: 'airtime_data', title: '📶 Data bundles', description: 'Pick from live plans' },
       ],
     }]);
-    await this.updateSession(ctx.phone, { step: this.STEPS.MENU, data: {} });
+    await this.updateSession(ctx.phone, { step: this.STEPS.MENU, data: { airtime: null } });
+  }
+
+  async startDataFlow(ctx) {
+    await this.updateSession(ctx.phone, {
+      step: this.STEPS.PICK_NETWORK,
+      data: { airtime: { type: 'data' }, dataPeriod: null, dataBundles: null, dataPage: 0 },
+    });
+    return this.showNetworkPicker(ctx, 'data');
+  }
+
+  async startAirtimeFlow(ctx) {
+    await this.updateSession(ctx.phone, {
+      step: this.STEPS.PICK_NETWORK,
+      data: { airtime: { type: 'airtime' }, dataPeriod: null, dataBundles: null, dataPage: 0 },
+    });
+    return this.showNetworkPicker(ctx, 'airtime');
   }
 
   async showNetworkPicker(ctx, type) {
+    const flowType = type === 'data' ? 'data' : 'airtime';
     await this.list(
       ctx.phone,
-      type === 'data' ? '*Pick network for data*' : '*Pick network for airtime*',
+      flowType === 'data' ? '*Pick network for data*' : '*Pick network for airtime*',
       'Networks',
       [{
         title: 'Network',
         rows: NETWORKS.map((n) => ({
           id: `net_${n.toLowerCase()}`,
           title: n,
-          description: type === 'data' ? 'Data bundles' : 'VTU airtime',
+          description: flowType === 'data' ? 'Data bundles' : 'VTU airtime',
         })),
       }]
     );
     await this.updateSession(ctx.phone, {
       step: this.STEPS.PICK_NETWORK,
-      data: { airtime: { type } },
+      data: { airtime: { type: flowType }, dataPeriod: null, dataBundles: null, dataPage: 0 },
     });
   }
 
   async showRecipientPicker(ctx, airtime) {
     const periodNote =
-      airtime.type === 'data' && airtime.dataPeriod
+      isDataFlow(airtime) && airtime.dataPeriod
         ? `\nDuration: *${periodLabel(airtime.dataPeriod)}*`
         : '';
     await this.buttons(
       ctx.phone,
-      `*${airtime.network} ${airtime.type === 'data' ? 'data' : 'airtime'}*${periodNote}\n\nWho is this for?`,
+      `*${airtime.network} ${isDataFlow(airtime) ? 'data' : 'airtime'}*${periodNote}\n\nWho is this for?`,
       [
         { id: 'air_self', title: 'My number' },
         { id: 'air_other', title: 'Someone else' },
@@ -103,6 +135,8 @@ class AirtimeService extends BaseService {
   }
 
   async showAirtimeAmounts(ctx, airtime) {
+    if (!isAirtimeFlow(airtime)) return this.startAirtimeFlow(ctx);
+
     const rows = AIRTIME_AMOUNTS.map((amt) => ({
       id: `air_amt_${amt}`,
       title: formatAmountTitle(amt),
@@ -120,57 +154,76 @@ class AirtimeService extends BaseService {
   }
 
   async showDataPeriodPicker(ctx, airtime) {
+    if (!airtime?.network) return this.showNetworkPicker(ctx, 'data');
+
     await this.list(
       ctx.phone,
-      `*${airtime.network} data*\n\nChoose bundle duration:`,
+      `*${airtime.network} data*\n\nChoose bundle duration *before* we load plans:`,
       'Duration',
       [{
         title: 'How long?',
         rows: [
-          { id: 'data_period_all', title: '📋 All bundles', description: 'Show every plan available' },
           { id: 'data_period_daily', title: '📅 Daily', description: '1–3 day plans' },
           { id: 'data_period_weekly', title: '📆 Weekly', description: '7-day plans' },
           { id: 'data_period_monthly', title: '🗓️ Monthly', description: '30-day & longer plans' },
         ],
       }]
     );
-    await this.updateSession(ctx.phone, { step: this.STEPS.PICK_PERIOD, data: { airtime } });
+    await this.updateSession(ctx.phone, {
+      step: this.STEPS.PICK_PERIOD,
+      data: { airtime: { ...airtime, type: 'data' } },
+    });
   }
 
   async showDataBundles(ctx, airtime, period, page = 0) {
-    await this.reply(ctx.phone, `⏳ Loading *${airtime.network}* data bundles…`);
+    if (!isDataFlow(airtime)) return this.startDataFlow(ctx);
+
+    const periodKey = normalizeDataPeriod(period || airtime.dataPeriod);
+    if (!periodKey) return this.showDataPeriodPicker(ctx, { ...airtime, type: 'data' });
+
+    const periodId = `data_period_${periodKey}`;
+    const next = { ...airtime, type: 'data', dataPeriod: periodId };
+
+    if (!next.phone) return this.showRecipientPicker(ctx, next);
+
+    // Lock step before async fetch so stray text cannot fall into airtime amount handler
+    await this.updateSession(ctx.phone, {
+      step: this.STEPS.PICK_BUNDLE,
+      data: { airtime: next, dataPeriod: periodId, dataPage: page },
+    });
+
+    await this.reply(
+      ctx.phone,
+      `⏳ Loading *${next.network}* *${periodLabel(periodId)}* bundles…`
+    );
 
     let all;
     try {
-      all = await telecom.fetchDataPlans(airtime.network);
+      all = await telecom.fetchDataPlans(next.network);
     } catch (err) {
       await this.reply(ctx.phone, 'Could not load bundles. Try again in a moment.');
-      return this.showDataPeriodPicker(ctx, airtime);
+      return this.showDataPeriodPicker(ctx, next);
     }
 
     if (!all?.length) {
-      await this.reply(ctx.phone, `No data plans available for *${airtime.network}* right now. Try another network.`);
+      await this.reply(ctx.phone, `No data plans available for *${next.network}* right now. Try another network.`);
       return this.showNetworkPicker(ctx, 'data');
     }
 
-    const periodKey = String(period || 'data_period_all').replace('data_period_', '');
     const filtered = filterBundlesByPeriod(all, periodKey);
 
     if (!filtered.length) {
       await this.reply(
         ctx.phone,
-        `No *${periodLabel(period)}* bundles for *${airtime.network}* right now.\n\nTry *All bundles* or another duration.`
+        `No *${periodLabel(periodId)}* bundles for *${next.network}* right now.\n\nTry another duration.`
       );
-      if (airtime.phone) {
-        return this.showDataBundles(ctx, airtime, 'data_period_all', 0);
-      }
-      return this.showDataPeriodPicker(ctx, airtime);
+      return this.showDataPeriodPicker(ctx, next);
     }
 
     const { items, hasMore, total } = paginateItems(filtered, page);
 
     const rows = items.map((b, i) => {
-      const row = formatBundleListRow({ ...b, network: airtime.network });
+      const row = formatBundleListRow({ ...b, network: next.network });
       return {
         id: `data_bundle_p${page}_i${i}`,
         title: row.title,
@@ -184,11 +237,11 @@ class AirtimeService extends BaseService {
     if (hasMore) {
       rows.push({ id: `data_page_${page + 1}`, title: '➡️ More bundles', description: `Page ${page + 2}` });
     }
-    rows.push({ id: 'data_filter', title: '🔍 Change filter', description: 'Daily / weekly / monthly' });
+    rows.push({ id: 'data_filter', title: '🔍 Change duration', description: 'Daily / weekly / monthly' });
 
     await this.list(
       ctx.phone,
-      `*${airtime.network} data* — ${periodLabel(period)}\n📞 ${airtime.phone}\n${total} plan(s)\n\nTap a bundle below:`,
+      `*${next.network} data* — ${periodLabel(periodId)}\n📞 ${next.phone}\n${total} plan(s)\n\nTap a bundle below:`,
       'Bundles',
       [{ title: 'Available plans', rows: rows.slice(0, 10) }]
     );
@@ -196,8 +249,8 @@ class AirtimeService extends BaseService {
     await this.updateSession(ctx.phone, {
       step: this.STEPS.PICK_BUNDLE,
       data: {
-        airtime,
-        dataPeriod: period || 'data_period_all',
+        airtime: next,
+        dataPeriod: periodId,
         dataBundles: filtered,
         dataPage: page,
       },
@@ -236,13 +289,9 @@ class AirtimeService extends BaseService {
       { id: 'air_confirm', title: '✅ Pay now' },
       { id: 'air_cancel', title: 'Cancel' },
     ];
-    const eligibility = await credit.checkEligibility(ctx.phone, airtime.amount);
-    if (eligibility.ok) {
-      buttons.splice(1, 0, { id: 'air_credit', title: '⚡ Use credit' });
-    }
 
     const detail =
-      airtime.type === 'data'
+      isDataFlow(airtime)
         ? `Plan: *${airtime.resolvedPlan?.planName}*\nPrice: *${wallet.formatNaira(airtime.amount)}*`
         : `Amount: *${wallet.formatNaira(airtime.amount)}*`;
 
@@ -254,7 +303,7 @@ class AirtimeService extends BaseService {
     await this.updateSession(ctx.phone, { step: this.STEPS.CONFIRM, data: { airtime } });
   }
 
-  async executePurchase(ctx, airtime, useCredit = false) {
+  async executePurchase(ctx, airtime) {
     const opts = {
       service: 'airtime',
       baseAmount: airtime.amount,
@@ -270,9 +319,7 @@ class AirtimeService extends BaseService {
         }),
     };
 
-    const purchase = useCredit
-      ? await confirmAndPayWithCredit(ctx.phone, opts)
-      : await confirmAndPay(ctx.phone, opts);
+    const purchase = await confirmAndPay(ctx.phone, opts);
 
     if (purchase?.awaitingPin || purchase?.awaitingPinSetup || purchase?.locked) return;
 
@@ -280,7 +327,7 @@ class AirtimeService extends BaseService {
       const note = purchase.result?.pendingWebhook ? '\n_Delivering to the line now…_' : '';
       await this.reply(
         ctx.phone,
-        `✅ *${airtime.type === 'data' ? 'Data' : 'Airtime'} sent!*\n\n` +
+        `✅ *${isDataFlow(airtime) ? 'Data' : 'Airtime'} sent!*\n\n` +
           `${airtime.network} → ${airtime.phone}\n\n` +
           `${purchase.result?.message ? `${purchase.result.message}\n\n` : ''}` +
           `Ref: *${purchase.reference}*\n` +
@@ -288,7 +335,7 @@ class AirtimeService extends BaseService {
           `Balance: ${wallet.formatNaira(purchase.balance)}` +
           note
       );
-    } else if (!purchase?.offeredCredit && !purchase?.prompted && !purchase?.insufficient) {
+    } else if (!purchase?.prompted && !purchase?.insufficient) {
       const refundNote = purchase?.refunded ? '\n\n_Your wallet was refunded._' : '';
       const reason =
         purchase?.message ||
@@ -310,27 +357,54 @@ class AirtimeService extends BaseService {
     const { choice, step, data, text } = ctx;
     const airtime = data?.airtime;
 
-    // ── Choice-first routing (works even if session step drifted) ──
-    if (choice === 'airtime_buy') return this.showNetworkPicker(ctx, 'airtime');
-    if (choice === 'airtime_data') return this.showNetworkPicker(ctx, 'data');
+    // ── Entry points ──
+    if (choice === 'airtime_buy') return this.startAirtimeFlow(ctx);
+    if (choice === 'airtime_data') return this.startDataFlow(ctx);
 
+    // ── Network (must match current flow type) ──
     if (choice?.startsWith('net_')) {
       const network = networkFromChoice(choice);
       if (!network) return this.showMenu(ctx);
-      const base = { ...(data?.airtime || airtime || {}), network };
-      const type = base.type === 'data' ? 'data' : 'airtime';
-      if (type === 'data') {
-        return this.showDataPeriodPicker(ctx, { ...base, type: 'data', network });
+
+      if (isDataFlow(airtime) || (step === this.STEPS.PICK_NETWORK && data?.airtime?.type === 'data')) {
+        return this.showDataPeriodPicker(ctx, { type: 'data', network });
       }
-      return this.showRecipientPicker(ctx, { ...base, type: 'airtime', network });
+      if (isAirtimeFlow(airtime) || data?.airtime?.type === 'airtime') {
+        return this.showRecipientPicker(ctx, { type: 'airtime', network });
+      }
+      return this.showMenu(ctx);
     }
 
-    if (choice === 'air_self' && airtime) {
-      const next = { ...airtime, phone: toLocalPhone(ctx.phone), recipientType: 'self' };
-      if (next.type === 'data') {
-        return this.showDataBundles(ctx, next, next.dataPeriod || data.dataPeriod || 'data_period_all', 0);
+    // ── Data: duration before bundles ──
+    if (choice === 'data_filter' && isDataFlow(airtime)) {
+      return this.showDataPeriodPicker(ctx, airtime);
+    }
+
+    if (choice?.startsWith('data_period_')) {
+      const periodKey = normalizeDataPeriod(choice);
+      if (!periodKey || !isDataFlow(airtime)) {
+        if (isDataFlow(airtime) || airtime?.network) {
+          return this.showDataPeriodPicker(ctx, airtime || { type: 'data' });
+        }
+        return this.showMenu(ctx);
       }
-      return this.showAirtimeAmounts(ctx, next);
+      const withPeriod = { ...airtime, type: 'data', dataPeriod: choice };
+      if (!withPeriod.phone) return this.showRecipientPicker(ctx, withPeriod);
+      return this.showDataBundles(ctx, withPeriod, choice, 0);
+    }
+
+    // ── Recipient ──
+    if (choice === 'air_self' && airtime) {
+      if (isDataFlow(airtime)) {
+        const next = { ...airtime, type: 'data', phone: toLocalPhone(ctx.phone), recipientType: 'self' };
+        if (!normalizeDataPeriod(next.dataPeriod)) return this.showDataPeriodPicker(ctx, next);
+        return this.showDataBundles(ctx, next, next.dataPeriod, 0);
+      }
+      if (isAirtimeFlow(airtime)) {
+        const next = { ...airtime, type: 'airtime', phone: toLocalPhone(ctx.phone), recipientType: 'self' };
+        return this.showAirtimeAmounts(ctx, next);
+      }
+      return this.showMenu(ctx);
     }
 
     if (choice === 'air_other' && airtime) {
@@ -342,31 +416,23 @@ class AirtimeService extends BaseService {
       return;
     }
 
-    if (choice === 'data_filter' && airtime?.type === 'data') {
-      return this.showDataPeriodPicker(ctx, airtime);
-    }
-
-    if (choice?.startsWith('data_period_') && airtime?.type === 'data') {
-      const withPeriod = { ...airtime, dataPeriod: choice };
-      if (!withPeriod.phone) {
-        return this.showRecipientPicker(ctx, withPeriod);
-      }
-      return this.showDataBundles(ctx, withPeriod, choice, 0);
-    }
-
-    if (choice?.startsWith('data_page_') && airtime?.type === 'data') {
+    // ── Data bundle pagination & selection ──
+    if (choice?.startsWith('data_page_') && isDataFlow(airtime)) {
       const page = Number(choice.replace('data_page_', ''));
-      return this.showDataBundles(ctx, airtime, data.dataPeriod || 'data_period_all', page);
+      const period = data.dataPeriod || airtime.dataPeriod;
+      return this.showDataBundles(ctx, airtime, period, page);
     }
 
-    if (choice?.startsWith('data_bundle_') && airtime?.type === 'data') {
+    if (choice?.startsWith('data_bundle_') && isDataFlow(airtime)) {
       const bundle = this.resolveBundleFromChoice(choice, data);
       if (!bundle) {
         await this.reply(ctx.phone, 'Bundle not found. Pick again from the list.');
-        return this.showDataBundles(ctx, airtime, data.dataPeriod || 'data_period_all', data.dataPage || 0);
+        const period = data.dataPeriod || airtime.dataPeriod;
+        return this.showDataBundles(ctx, airtime, period, data.dataPage || 0);
       }
       const next = {
         ...airtime,
+        type: 'data',
         amount: bundle.amount,
         value: bundle.variationCode,
         resolvedPlan: {
@@ -381,20 +447,18 @@ class AirtimeService extends BaseService {
       return this.showConfirm(ctx, next);
     }
 
+    // ── Airtime amounts & confirm ──
     if (choice === 'air_confirm' && airtime) {
-      return this.executePurchase(ctx, airtime, false);
-    }
-    if (choice === 'air_credit' && airtime) {
-      return this.executePurchase(ctx, airtime, true);
+      return this.executePurchase(ctx, airtime);
     }
 
-    if (choice === 'air_amt_custom' && airtime?.type === 'airtime') {
+    if (choice === 'air_amt_custom' && isAirtimeFlow(airtime)) {
       await this.reply(ctx.phone, `Enter amount in Naira (min ${wallet.formatNaira(MIN_AIRTIME_AMOUNT)}):`);
       await this.updateSession(ctx.phone, { step: this.STEPS.ENTER_AMOUNT, data });
       return;
     }
 
-    if (choice?.startsWith('air_amt_') && airtime?.type === 'airtime') {
+    if (choice?.startsWith('air_amt_') && isAirtimeFlow(airtime)) {
       const amount = Number(choice.replace('air_amt_', ''));
       if (!amount || amount < MIN_AIRTIME_AMOUNT) {
         await this.reply(ctx.phone, `Minimum airtime is ${wallet.formatNaira(MIN_AIRTIME_AMOUNT)}.`);
@@ -403,7 +467,7 @@ class AirtimeService extends BaseService {
       return this.showConfirm(ctx, { ...airtime, amount });
     }
 
-    // ── Text input steps ──
+    // ── Text input steps (data first — avoids airtime bleed-through) ──
     if (step === this.STEPS.ENTER_PHONE && airtime) {
       const phone = toLocalPhone(text);
       if (phone.length < 11) {
@@ -411,23 +475,30 @@ class AirtimeService extends BaseService {
         return;
       }
       const next = { ...airtime, phone };
-      if (next.type === 'data') {
-        return this.showDataBundles(ctx, next, next.dataPeriod || data.dataPeriod || 'data_period_all', 0);
+      if (isDataFlow(next)) {
+        if (!normalizeDataPeriod(next.dataPeriod || data.dataPeriod)) {
+          return this.showDataPeriodPicker(ctx, { ...next, type: 'data' });
+        }
+        const period = next.dataPeriod || data.dataPeriod;
+        return this.showDataBundles(ctx, { ...next, type: 'data' }, period, 0);
       }
-      return this.showAirtimeAmounts(ctx, next);
+      if (isAirtimeFlow(next)) {
+        return this.showAirtimeAmounts(ctx, { ...next, type: 'airtime' });
+      }
+      return this.showMenu(ctx);
     }
 
-    if (step === this.STEPS.PICK_PERIOD && airtime?.type === 'data') {
-      await this.reply(ctx.phone, '_Tap Daily, Weekly, Monthly, or All bundles from the list above._');
+    if (step === this.STEPS.PICK_PERIOD && isDataFlow(airtime)) {
+      await this.reply(ctx.phone, '_Tap *Daily*, *Weekly*, or *Monthly* from the list above._');
       return;
     }
 
-    if (step === this.STEPS.PICK_BUNDLE && airtime?.type === 'data') {
-      await this.reply(ctx.phone, '_Tap a bundle from the list above, or *Change filter* to pick another duration._');
+    if (step === this.STEPS.PICK_BUNDLE && isDataFlow(airtime)) {
+      await this.reply(ctx.phone, '_Tap a bundle from the list above, or *Change duration* to pick another period._');
       return;
     }
 
-    if (step === this.STEPS.PICK_AMOUNT && airtime?.type === 'airtime') {
+    if (step === this.STEPS.PICK_AMOUNT && isAirtimeFlow(airtime)) {
       const parsed = parseFloat(String(text || '').replace(/[₦,]/g, ''));
       if (parsed >= MIN_AIRTIME_AMOUNT) {
         return this.showConfirm(ctx, { ...airtime, amount: parsed });
@@ -439,7 +510,7 @@ class AirtimeService extends BaseService {
       return;
     }
 
-    if (step === this.STEPS.ENTER_AMOUNT && airtime?.type === 'airtime') {
+    if (step === this.STEPS.ENTER_AMOUNT && isAirtimeFlow(airtime)) {
       const amount = parseFloat(String(text || '').replace(/[₦,]/g, ''));
       if (!amount || amount < MIN_AIRTIME_AMOUNT) {
         await this.reply(ctx.phone, `Minimum ${wallet.formatNaira(MIN_AIRTIME_AMOUNT)}.`);
@@ -448,12 +519,16 @@ class AirtimeService extends BaseService {
       return this.showConfirm(ctx, { ...airtime, amount });
     }
 
-    if (step === this.STEPS.CONFIRM && (isAffirmation(text) || text?.toLowerCase() === 'pay')) {
-      return this.executePurchase(ctx, airtime, false);
+    if (step === this.STEPS.CONFIRM && airtime && (isAffirmation(text) || text?.toLowerCase() === 'pay')) {
+      return this.executePurchase(ctx, airtime);
     }
 
     if (airtime && step && step !== this.STEPS.MENU) {
-      if (airtime.type === 'data' && [this.STEPS.PICK_NETWORK, this.STEPS.PICK_RECIPIENT].includes(step)) {
+      if (isDataFlow(airtime) && [this.STEPS.PICK_NETWORK, this.STEPS.PICK_RECIPIENT, this.STEPS.PICK_PERIOD].includes(step)) {
+        await this.reply(ctx.phone, '_Tap an option from the list above._');
+        return;
+      }
+      if (isAirtimeFlow(airtime) && [this.STEPS.PICK_NETWORK, this.STEPS.PICK_RECIPIENT].includes(step)) {
         await this.reply(ctx.phone, '_Tap an option from the list above._');
         return;
       }

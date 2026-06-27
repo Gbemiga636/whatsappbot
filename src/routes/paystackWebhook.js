@@ -39,15 +39,6 @@ async function handlePaystackWebhook(req, res) {
 
     const result = await wallet.processTopUpWebhook(reference, amount);
 
-    if (result.ok && !result.alreadyProcessed && result.phone) {
-      const credit = require('../credit/creditService');
-      const repay = await credit.autoRepayOnTopUp(result.phone);
-      if (repay?.repaid > 0) {
-        result.balance = repay.balance;
-        result.creditRepaid = repay.repaid;
-      }
-    }
-
     if (result.ok) {
       const shouldNotify =
         result.phone &&
@@ -62,7 +53,6 @@ async function handlePaystackWebhook(req, res) {
             balance: result.balance,
             reference,
             isGift: result.isGift,
-            creditRepaid: result.creditRepaid,
           });
         } catch (err) {
           logger.warn('Could not notify user of top-up', { error: err.message });

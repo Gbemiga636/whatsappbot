@@ -6,7 +6,6 @@ const { getSession, setSession, loadSessionFromDb } = require('../sessionStore')
 const { getUser, isAuthenticated } = require('../userStore');
 const { createContext } = require('../core/context');
 const logger = require('../core/logger');
-const config = require('../config');
 const { showSuperAppMenu, showMoreServicesMenu, isSuperMenuStep } = require('./superAppMenu');
 const { resolveServiceId, getService } = require('./serviceRegistry');
 const { tryNaturalLanguageRoute } = require('./nlExecutor');
@@ -21,11 +20,18 @@ const {
 const { handleIncomingMessage: handleAdsFlow } = require('../flows/campaignFlow');
 const supabaseFlow = require('../flows/supabaseAuthFlow');
 const { isSupabaseReady } = require('../auth/supabaseAuth');
-const { handleCreditAction, handleCreditCommand, isCreditChoice } = require('../credit/creditHandler');
 const pinPortal = require('../security/pinPortal');
 const wallet = require('../wallet/walletService');
 const transactionPin = require('../security/transactionPin');
 const { normalizePhone } = require('../utils/phone');
+
+const QUICK_VTU_ENTRIES = {
+  menu_airtime: { service: 'airtime', entry: 'airtime' },
+  menu_data: { service: 'airtime', entry: 'data' },
+  menu_electric: { service: 'bills', entry: 'electric' },
+  menu_tv: { service: 'bills', entry: 'tv' },
+  menu_betting: { service: 'bills', entry: 'betting' },
+};
 
 const GREETINGS = new Set([
   'menu', 'start', 'hi', 'hello', 'help', '0', 'home', 'hey', 'hiya', 'howdy',
@@ -47,6 +53,46 @@ async function showEntry(phone) {
   }
   const next = await supabaseFlow.showAuthWelcome(phone);
   setSession(phone, { step: next.step, activeService: null, data: next.data });
+}
+
+async function routeQuickVtuEntry(phone, choice, ctx) {
+  const entry = QUICK_VTU_ENTRIES[choice];
+  if (!entry) return false;
+
+  if (requiresAuth(phone)) {
+    await promptLoginRequired(phone);
+    return true;
+  }
+
+  const service = getService(entry.service);
+  if (!service) return false;
+
+  const session = getSession(phone) || { step: 'idle', data: {}, activeService: null };
+  setSession(phone, {
+    ...session,
+    activeService: entry.service,
+    step: `${entry.service}_menu`,
+    data: {},
+  });
+
+  const freshCtx = createContext(
+    phone,
+    ctx.incoming ? { type: 'text', text: { body: ctx.text } } : {},
+    getSession(phone),
+    getUser(phone)
+  );
+
+  if (entry.service === 'airtime') {
+    if (entry.entry === 'data') await service.startDataFlow(freshCtx);
+    else await service.startAirtimeFlow(freshCtx);
+    return true;
+  }
+
+  if (entry.entry === 'electric') await service.showDiscoPicker(freshCtx);
+  else if (entry.entry === 'tv') await service.showTvPicker(freshCtx);
+  else if (entry.entry === 'betting') await service.showBookmakerPicker(freshCtx);
+
+  return true;
 }
 
 async function routeToService(phone, serviceId, ctx) {
@@ -157,13 +203,10 @@ async function handleIncomingMessage(from, message) {
     return showSuperAppMenu(phone);
   }
 
-  // Mysogi Credit — global actions
-  if (isCreditChoice(choice)) {
-    const handled = await handleCreditAction(phone, choice, session);
+  if (QUICK_VTU_ENTRIES[choice] && isSuperMenuStep(session)) {
+    const handled = await routeQuickVtuEntry(phone, choice, ctx);
     if (handled) return;
   }
-
-  if (await handleCreditCommand(phone, incoming.text)) return;
 
   // Catch missed Paystack top-up confirmations (text only — never block list/button taps)
   if (!incoming.listId && !incoming.buttonId) {
@@ -178,8 +221,18 @@ async function handleIncomingMessage(from, message) {
 
   if (incoming.text && !inServiceWizard) {
     const nlCtx = { ...ctx, session, text: incoming.text, incoming };
-    const nlHandled = await tryNaturalLanguageRoute(phone, incoming, nlCtx);
-    if (nlHandled) return;
+    try {
+      const nlHandled = await tryNaturalLanguageRoute(phone, incoming, nlCtx);
+      if (nlHandled) return;
+    } catch (nlErr) {
+      logger.error('NL handler error', { phone, error: nlErr.message });
+      const whatsapp = require('../whatsapp');
+      await whatsapp.sendText(
+        phone,
+        `I didn't quite catch that.\n\nTry again — e.g. *fund my sportybet account* — or type *menu*.`
+      );
+      return;
+    }
   }
 
   // Greeting → auth welcome if not logged in, else super menu
