@@ -54,7 +54,7 @@ app.get('/health', (_req, res) => {
     supabaseServiceRole: hasServiceRoleKey(),
     paystack: !!config.payments.paystack.secretKey,
     billsProvider: config.bills.provider,
-    erightVtu: !!config.bills.erightvtu.apiKey,
+    autoSyncNg: !!config.bills.autosyncng.apiKey,
     vtpass: !!config.bills.vtpass.apiKey,
     whatsapp: {
       phoneNumberIdSet: !!config.whatsapp.phoneNumberId,

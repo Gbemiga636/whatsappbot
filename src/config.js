@@ -81,24 +81,17 @@ module.exports = {
   },
 
   bills: {
-    provider: (process.env.BILLS_PROVIDER || 'vtpass').trim().toLowerCase(), // vtpass | erightvtu
+    provider: (process.env.BILLS_PROVIDER || 'vtpass').trim().toLowerCase(), // vtpass | autosyncng
     vtpass: {
       apiKey: (process.env.VTPASS_API_KEY || '').trim(),
       publicKey: (process.env.VTPASS_PUBLIC_KEY || '').trim(),
       secretKey: (process.env.VTPASS_SECRET_KEY || '').trim(),
       sandbox: process.env.VTPASS_SANDBOX !== 'false',
     },
-    erightvtu: {
-      apiKey: (process.env.ERIGHT_VTU_API_KEY || '').trim(),
-      apiPin: (process.env.ERIGHT_VTU_API_PIN || '0000').trim(),
-      baseUrl: (process.env.ERIGHT_VTU_BASE_URL || 'https://sabuss.com/vtu/api').trim(),
-      billPlans: (() => {
-        try {
-          return JSON.parse(process.env.ERIGHT_VTU_BILL_PLANS || '{}');
-        } catch {
-          return {};
-        }
-      })(),
+    autosyncng: {
+      apiKey: (process.env.AUTOSYNCNG_API_KEY || '').trim(),
+      apiPin: (process.env.AUTOSYNCNG_API_PIN || '').trim(),
+      baseUrl: (process.env.AUTOSYNCNG_BASE_URL || 'https://autosyncng.com/api/v1').trim(),
     },
   },
 

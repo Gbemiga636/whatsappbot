@@ -1,20 +1,20 @@
 /**
- * Telecom / bills provider router — switch between VTPass and ERight VTU via .env
+ * Telecom / bills provider router — switch via .env
  *
- * BILLS_PROVIDER=erightvtu  → ERight VTU (airtime, data); bills fall back to VTPass when needed
- * BILLS_PROVIDER=vtpass     → VTPass (default fallback)
+ * BILLS_PROVIDER=autosyncng → AutoSyncNG (airtime, data, electricity, cable)
+ * BILLS_PROVIDER=vtpass      → VTPass (all services)
  */
 
 const config = require('../config');
 const vtpass = require('./vtpass');
-const erightvtu = require('./erightvtu');
+const autosyncng = require('./autosyncng');
 
 function getProviderName() {
   return (config.bills.provider || 'vtpass').toLowerCase();
 }
 
 function getProvider() {
-  return getProviderName() === 'erightvtu' ? erightvtu : vtpass;
+  return getProviderName() === 'autosyncng' ? autosyncng : vtpass;
 }
 
 function vtpassConfigured() {
@@ -26,15 +26,15 @@ async function purchaseAirtime(opts) {
 }
 
 async function resolveDataPlan(network, planText) {
-  if (getProviderName() === 'erightvtu') {
-    return erightvtu.resolveDataPlan(network, planText);
+  if (getProviderName() === 'autosyncng') {
+    return autosyncng.resolveDataPlan(network, planText);
   }
   return { ok: true, amount: 500, planName: planText, planId: planText };
 }
 
 async function payBill(bill) {
-  if (getProviderName() === 'erightvtu') {
-    const result = await erightvtu.payBill(bill);
+  if (getProviderName() === 'autosyncng') {
+    const result = await autosyncng.payBill(bill);
     if (!result.ok && result.fallback === 'vtpass' && vtpassConfigured()) {
       const vtResult = await vtpass.payBill(bill);
       if (vtResult.ok) {
