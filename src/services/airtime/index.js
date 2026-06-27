@@ -5,6 +5,7 @@ const {
   filterBundlesByPeriod,
   paginateItems,
   formatBundleListRow,
+  formatCatalogPagePreamble,
   formatAmountTitle,
   PAGE_SIZE,
 } = require('../../utils/vtuCatalog');
@@ -239,9 +240,16 @@ class AirtimeService extends BaseService {
     }
     rows.push({ id: 'data_filter', title: '🔍 Change duration', description: 'Daily / weekly / monthly' });
 
+    const preamble = formatCatalogPagePreamble(items, {
+      getLabel: (b) => b.planName,
+      getAmount: (b) => b.amount,
+    });
+
     await this.list(
       ctx.phone,
-      `*${next.network} data* — ${periodLabel(periodId)}\n📞 ${next.phone}\n${total} plan(s)\n\nTap a bundle below:`,
+      `*${next.network} data* — ${periodLabel(periodId)}\n📞 ${next.phone}\n${total} plan(s) — page ${page + 1}\n\n` +
+        `*Bundles on this page:*\n${preamble}\n\n` +
+        `_Tap below. Price on the left; full plan name on the right._`,
       'Bundles',
       [{ title: 'Available plans', rows: rows.slice(0, 10) }]
     );

@@ -1,8 +1,18 @@
 /**
  * Helpers for VTU catalog display — period buckets & WhatsApp list pagination.
+ * WhatsApp list row limits: title 24 chars, description 72 chars.
  */
 
 const PAGE_SIZE = 8;
+const WA_TITLE_MAX = 24;
+const WA_DESC_MAX = 72;
+
+function clipMenuText(text, max) {
+  const s = String(text || '').trim();
+  if (!s) return '';
+  if (s.length <= max) return s;
+  return `${s.slice(0, Math.max(0, max - 1))}…`;
+}
 
 function classifyBundlePeriod(name) {
   const n = String(name || '').toLowerCase();
@@ -22,18 +32,69 @@ function filterBundlesByPeriod(bundles, period) {
   return bundles.filter((b) => classifyBundlePeriod(b.planName) === period);
 }
 
-/** WhatsApp list: title ≤24 chars, description ≤72 chars */
+function formatAmountTitle(amount) {
+  return clipMenuText(`₦${Number(amount).toLocaleString('en-NG')}`, WA_TITLE_MAX);
+}
+
+/**
+ * Catalog row — price in title, full label in description (data, DSTV, GOtv, etc.)
+ */
+function formatCatalogListRow({ name, planName, amount, network, subtitle }) {
+  const label = String(planName || name || 'Plan').trim();
+  const amt = Number(amount);
+  const price = Number.isFinite(amt) && amt > 0 ? `₦${amt.toLocaleString('en-NG')}` : '';
+  const title = price ? clipMenuText(price, WA_TITLE_MAX) : clipMenuText(label, WA_TITLE_MAX);
+
+  let description = label;
+  if (subtitle) description = `${label} · ${subtitle}`;
+  if (network && price) description = `${label} · ${network}`;
+
+  return {
+    title,
+    description: clipMenuText(description, WA_DESC_MAX),
+    fullLabel: label,
+  };
+}
+
+/** @deprecated use formatCatalogListRow */
 function formatBundleListRow(bundle) {
-  const name = String(bundle.planName || 'Data bundle').trim();
-  const amt = Number(bundle.amount);
-  const price = amt ? `₦${amt.toLocaleString('en-NG')}` : '';
-  const title = price ? `${price}` : name.slice(0, 24);
-  const description = price ? `${name} · ${bundle.network || ''}`.trim().slice(0, 72) : name.slice(0, 72);
-  return { title: title.slice(0, 24), description };
+  return formatCatalogListRow({
+    planName: bundle.planName,
+    amount: bundle.amount,
+    network: bundle.network,
+  });
+}
+
+/** Provider / bookmaker row — short code or name in title, full name in description */
+function formatProviderListRow({ name, code, subtitle }) {
+  const full = String(name || '').replace(/\[.*?\]/g, '').trim();
+  const codeLabel = String(code || '').trim().toUpperCase();
+  const title = clipMenuText(codeLabel || full, WA_TITLE_MAX);
+  const description = clipMenuText(
+    [full, subtitle].filter(Boolean).join(' · '),
+    WA_DESC_MAX
+  );
+  return { title, description, fullLabel: full };
+}
+
+/** Numbered full labels for list body (current page only) */
+function formatCatalogPagePreamble(items, { getLabel, getAmount, header } = {}) {
+  if (!items?.length) return '';
+  const lines = items.map((item, i) => {
+    const label = getLabel ? getLabel(item) : item.name || item.planName || 'Plan';
+    const amt = getAmount ? getAmount(item) : item.amount;
+    const price =
+      Number.isFinite(Number(amt)) && Number(amt) > 0
+        ? ` — ₦${Number(amt).toLocaleString('en-NG')}`
+        : '';
+    return `${i + 1}. ${label}${price}`;
+  });
+  const body = lines.join('\n');
+  return header ? `${header}\n\n${body}` : body;
 }
 
 function formatBundleTitle(bundle) {
-  const name = String(bundle.planName || 'Bundle').trim();
+  const name = String(bundle.planName || bundle.name || 'Bundle').trim();
   const amt = Number(bundle.amount);
   return amt ? `${name} — ₦${amt.toLocaleString('en-NG')}` : name;
 }
@@ -45,16 +106,18 @@ function paginateItems(items, page = 0) {
   return { items: slice, page, hasMore, total: items.length };
 }
 
-function formatAmountTitle(amount) {
-  return `₦${Number(amount).toLocaleString('en-NG')}`;
-}
-
 module.exports = {
   PAGE_SIZE,
+  WA_TITLE_MAX,
+  WA_DESC_MAX,
+  clipMenuText,
   classifyBundlePeriod,
   filterBundlesByPeriod,
   paginateItems,
   formatBundleTitle,
   formatBundleListRow,
+  formatCatalogListRow,
+  formatProviderListRow,
+  formatCatalogPagePreamble,
   formatAmountTitle,
 };

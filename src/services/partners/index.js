@@ -2,6 +2,7 @@ const BaseService = require('../BaseService');
 const partnerStore = require('../../stores/partnerStore');
 const { confirmAndPay } = require('../../wallet/purchaseHelper');
 const wallet = require('../../wallet/walletService');
+const { formatCatalogListRow } = require('../../utils/vtuCatalog');
 
 const CATEGORIES = ['Food', 'Fashion', 'Beauty', 'Electronics', 'Services', 'Health', 'Education', 'Other'];
 
@@ -31,10 +32,11 @@ class PartnersService extends BaseService {
 
     for (const s of services.slice(0, 6)) {
       const biz = s.business_partners?.business_name || 'Partner';
+      const row = formatCatalogListRow({ name: s.name, amount: s.price, subtitle: biz });
       rows.push({
         id: `partner_${s.id}`,
-        title: `${s.emoji || '🏪'} ${s.name}`.slice(0, 24),
-        description: `${biz} · ${wallet.formatNaira(s.price)}`.slice(0, 72),
+        title: row.title,
+        description: row.description,
       });
     }
 

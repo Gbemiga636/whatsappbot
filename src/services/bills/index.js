@@ -1,7 +1,14 @@
 const BaseService = require('../BaseService');
 const telecom = require('../../providers/telecomProvider');
 const { confirmAndPay, wallet } = require('../../wallet/purchaseHelper');
-const { paginateItems, formatBundleTitle, formatAmountTitle } = require('../../utils/vtuCatalog');
+const {
+  paginateItems,
+  formatCatalogListRow,
+  formatProviderListRow,
+  formatCatalogPagePreamble,
+  formatAmountTitle,
+  PAGE_SIZE,
+} = require('../../utils/vtuCatalog');
 
 const ELECTRIC_AMOUNTS = [1000, 2000, 5000, 10000, 20000];
 const BETTING_AMOUNTS = [500, 1000, 2000, 5000, 10000];
@@ -60,11 +67,10 @@ class BillsService extends BaseService {
     }
 
     const { items, hasMore } = paginateItems(discos, 0);
-    const rows = items.map((d, i) => ({
-      id: `disco_${i}`,
-      title: d.name.replace(/\[.*?\]/g, '').trim().slice(0, 24),
-      description: d.code.toUpperCase(),
-    }));
+    const rows = items.map((d, i) => {
+      const row = formatProviderListRow({ name: d.name, code: d.code });
+      return { id: `disco_${i}`, title: row.title, description: row.description };
+    });
     if (hasMore) rows.push({ id: 'disco_page_1', title: '➡️ More discos', description: 'Next page' });
 
     await this.list(ctx.phone, '*⚡ Electricity*\n\nSelect your disco:', 'Discos', [{ title: 'Provider', rows: rows.slice(0, 10) }]);
@@ -82,11 +88,10 @@ class BillsService extends BaseService {
     }
 
     const { items, hasMore } = paginateItems(bookmakers, page);
-    const rows = items.map((b, i) => ({
-      id: `bet_${page * 9 + i}`,
-      title: b.name.slice(0, 24),
-      description: 'Top up account',
-    }));
+    const rows = items.map((b, i) => {
+      const row = formatProviderListRow({ name: b.name, subtitle: 'Fund account' });
+      return { id: `bet_${page * PAGE_SIZE + i}`, title: row.title, description: row.description };
+    });
     if (hasMore) rows.push({ id: `bet_page_${page + 1}`, title: '➡️ More', description: 'Next page' });
 
     await this.list(ctx.phone, '*🎰 Betting*\n\nSelect bookmaker:', 'Bookmakers', [{ title: 'Platform', rows: rows.slice(0, 10) }]);
@@ -96,30 +101,42 @@ class BillsService extends BaseService {
     });
   }
 
-  async showCablePackages(ctx, billType, smartcard) {
+  async showCablePackages(ctx, billType, smartcard, page = 0) {
     const packages = await telecom.getCablePackages(billType);
     if (!packages.length) {
       await this.reply(ctx.phone, `No ${billType.toUpperCase()} packages found. Try again later.`);
       return this.showMenu(ctx);
     }
 
-    const { items, hasMore } = paginateItems(packages, 0);
-    const rows = items.map((p, i) => ({
-      id: `pkg_${i}`,
-      title: formatBundleTitle({ planName: p.name, amount: p.amount }).slice(0, 24),
-      description: smartcard ? `Card ${smartcard}` : billType.toUpperCase(),
-    }));
-    if (hasMore) rows.push({ id: 'pkg_page_1', title: '➡️ More plans', description: 'Next page' });
+    const { items, hasMore, total } = paginateItems(packages, page);
+    const rows = items.map((p, i) => {
+      const row = formatCatalogListRow({ name: p.name, amount: p.amount });
+      return { id: `pkg_${page * PAGE_SIZE + i}`, title: row.title, description: row.description };
+    });
 
-    await this.list(
-      ctx.phone,
-      `*📺 ${billType.toUpperCase()}*\nSmartcard: *${smartcard}*\n\nPick package:`,
-      'Packages',
-      [{ title: 'Bouquets', rows: rows.slice(0, 10) }]
-    );
+    if (page > 0) {
+      rows.unshift({ id: `pkg_page_${page - 1}`, title: '⬅️ Previous', description: 'Earlier packages' });
+    }
+    if (hasMore) {
+      rows.push({ id: `pkg_page_${page + 1}`, title: '➡️ More plans', description: `Page ${page + 2} of ${Math.ceil(total / PAGE_SIZE)}` });
+    }
+
+    const preamble = formatCatalogPagePreamble(items, {
+      getLabel: (p) => p.name,
+      getAmount: (p) => p.amount,
+    });
+
+    const body =
+      `*📺 ${billType.toUpperCase()}*\n` +
+      `Smartcard: *${smartcard}*\n` +
+      `${total} package(s) — page ${page + 1}\n\n` +
+      `*Plans on this page:*\n${preamble}\n\n` +
+      `_Tap a package below. Price is on the left; plan name is on the right._`;
+
+    await this.list(ctx.phone, body, 'Packages', [{ title: 'Bouquets', rows: rows.slice(0, 10) }]);
     await this.updateSession(ctx.phone, {
       step: this.STEPS.PICK_PACKAGE,
-      data: { bill: { type: billType, smartcard }, packages },
+      data: { bill: { type: billType, smartcard }, packages, pkgPage: page },
     });
   }
 
@@ -285,19 +302,13 @@ class BillsService extends BaseService {
     if (choice?.startsWith('pkg_') && data.packages && data.bill) {
       if (choice.startsWith('pkg_page_')) {
         const page = Number(choice.replace('pkg_page_', ''));
-        const { items, hasMore } = paginateItems(data.packages, page);
-        const rows = items.map((p, i) => ({
-          id: `pkg_${page * 9 + i}`,
-          title: formatBundleTitle({ planName: p.name, amount: p.amount }).slice(0, 24),
-          description: data.bill.smartcard,
-        }));
-        if (hasMore) rows.push({ id: `pkg_page_${page + 1}`, title: '➡️ More', description: 'Next' });
-        await this.list(ctx.phone, '*More packages*', 'Packages', [{ title: 'Bouquets', rows: rows.slice(0, 10) }]);
-        return;
+        return this.showCablePackages(ctx, data.bill.type, data.bill.smartcard, page);
       }
       const idx = Number(choice.replace('pkg_', ''));
       const pkg = data.packages[idx];
-      if (!pkg) return this.showCablePackages(ctx, data.bill.type, data.bill.smartcard);
+      if (!pkg) {
+        return this.showCablePackages(ctx, data.bill.type, data.bill.smartcard, data.pkgPage || 0);
+      }
       const bill = {
         ...data.bill,
         amount: pkg.amount,
@@ -311,11 +322,10 @@ class BillsService extends BaseService {
 
     if (choice === 'disco_page_1' && data.discos) {
       const { items } = paginateItems(data.discos, 1);
-      const rows = items.map((d, i) => ({
-        id: `disco_${9 + i}`,
-        title: d.name.replace(/\[.*?\]/g, '').trim().slice(0, 24),
-        description: d.code,
-      }));
+      const rows = items.map((d, i) => {
+        const row = formatProviderListRow({ name: d.name, code: d.code });
+        return { id: `disco_${PAGE_SIZE + i}`, title: row.title, description: row.description };
+      });
       await this.list(ctx.phone, '*More discos*', 'Discos', [{ title: 'Provider', rows: rows.slice(0, 10) }]);
       return;
     }
