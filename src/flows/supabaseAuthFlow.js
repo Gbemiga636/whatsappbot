@@ -112,7 +112,7 @@ async function startLogin(phone) {
     `*Log in to Mysogi*\n\n` +
       `Reply with your *email address*.\n\n` +
       `_Or send: email | password (one line)_\n` +
-      `_Type *menu* to cancel._`
+      `_Type *menu* or *cancel* to go back._`
   );
   return { step: 'auth_login_email', data: { authMode: 'login_pending' } };
 }
@@ -125,7 +125,7 @@ async function startSignup(phone) {
       `*Format:*\nFirst name | Last name | Email | Password\n\n` +
       `*Example:*\nAda | Okafor | ada@email.com | mypass123\n\n` +
       `Phone: *+${formatPhone(phone)}* (from WhatsApp)\n` +
-      `_Password: min 6 characters. Type *menu* to cancel._`
+      `_Password: min 6 characters. Type *menu* or *cancel* to go back._`
   );
   return { step: 'auth_signup', data: { authMode: 'signup_pending', signupStep: 'bulk' } };
 }
@@ -258,7 +258,7 @@ async function handleSignupInput(phone, text, data, { buttonId = '', listId = ''
 async function startOtpLogin(phone) {
   await whatsapp.sendText(
     phone,
-    `*Login with email code*\n\nReply with your *email address*.\nWe'll send a 6-digit code.\n\n_Type *menu* to cancel._`
+    `*Login with email code*\n\nReply with your *email address*.\nWe'll send a 6-digit code.\n\n_Type *menu* or *cancel* to go back._`
   );
   return { step: 'auth_otp_email', data: { authMode: 'otp_pending' } };
 }

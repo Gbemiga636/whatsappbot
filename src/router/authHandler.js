@@ -25,6 +25,45 @@ function useSupabaseAuth() {
   return isSupabaseReady();
 }
 
+const AUTH_IN_PROGRESS_STEPS = new Set([
+  'auth_login_email',
+  'auth_login_password',
+  'auth_signup',
+  'auth_otp_email',
+  'auth_otp_code',
+]);
+
+const AUTH_CANCEL_WORDS = new Set(['cancel', 'stop', 'quit', 'exit', 'back']);
+
+function isAuthInterrupt(text) {
+  const t = (text || '').trim().toLowerCase();
+  if (!t) return false;
+  if (AUTH_CANCEL_WORDS.has(t)) return true;
+  if (['menu', 'start', 'hi', 'hello', 'help', '0', 'home', 'hey', 'hiya', 'howdy'].includes(t)) return true;
+  if (/^good\s+(morning|afternoon|evening)$/i.test(t)) return true;
+  return /^(hi|hello|hey)[\s,!?.]*$/i.test(t);
+}
+
+async function interruptAuthFlow(phone, text) {
+  const cancelled = AUTH_CANCEL_WORDS.has((text || '').trim().toLowerCase());
+  if (cancelled) {
+    await whatsapp.sendText(phone, '✅ Cancelled.');
+  }
+
+  if (isAuthenticated(phone) || isGuest(phone)) {
+    await showSuperAppMenu(phone);
+    setSession(phone, {
+      step: 'super_menu',
+      activeService: null,
+      data: { authMode: isAuthenticated(phone) ? 'authenticated' : 'guest' },
+    });
+    return;
+  }
+
+  const next = await supabaseFlow.showAuthWelcome(phone);
+  setSession(phone, { step: next.step, activeService: null, data: next.data });
+}
+
 async function applyAuthStepResult(phone, next) {
   if (!next) return;
   setSession(phone, {
@@ -54,6 +93,11 @@ async function handleAuthSteps(phone, message, session) {
   const listId = message.interactive?.list_reply?.id || '';
   const choice = buttonId || listId;
   const data = session.data || {};
+
+  if (AUTH_IN_PROGRESS_STEPS.has(session.step) && !choice && isAuthInterrupt(text)) {
+    await interruptAuthFlow(normalizedPhone, text);
+    return true;
+  }
 
   if (useSupabaseAuth()) {
     if (choice === 'auth_guest' && session.step === 'auth_welcome') {
