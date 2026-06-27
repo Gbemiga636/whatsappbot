@@ -35,8 +35,8 @@ function isGreeting(text) {
   const t = (text || '').trim().toLowerCase();
   if (!t) return false;
   if (GREETINGS.has(t)) return true;
-  if (t.startsWith('good ')) return true;
-  return /^(hi|hello|hey)[\s,!?.]*$/.test(t) || /^(hi|hello|hey)\s/.test(t);
+  if (/^good\s+(morning|afternoon|evening)$/i.test(t)) return true;
+  return /^(hi|hello|hey)[\s,!?.]*$/i.test(t);
 }
 
 async function showEntry(phone) {
@@ -161,16 +161,16 @@ async function handleIncomingMessage(from, message) {
 
   if (await handleCreditCommand(phone, incoming.text)) return;
 
-  // Greeting → auth welcome if not logged in, else super menu
-  if (isGreeting(incoming.text) && !session.activeService) {
-    return showEntry(phone);
-  }
-
-  // Natural language — OpenAI routes to any service or action
+  // Natural language — understand free text before greeting/menu shortcuts
   if (incoming.text) {
     const nlCtx = { ...ctx, session, text: incoming.text, incoming };
     const nlHandled = await tryNaturalLanguageRoute(phone, incoming, nlCtx);
     if (nlHandled) return;
+  }
+
+  // Greeting → auth welcome if not logged in, else super menu
+  if (isGreeting(incoming.text) && !session.activeService) {
+    return showEntry(phone);
   }
 
   // Block unauthenticated access to services

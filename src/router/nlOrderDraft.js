@@ -43,12 +43,32 @@ function createTelecomDraft(type, params, userPhone) {
 }
 
 function createBillDraft(params) {
+  const action = params.bill_type === 'betting' || params.bookmaker ? 'buy_betting' : 'pay_bill';
   return {
     service: 'bills',
-    action: 'pay_bill',
-    params: normalizeBillParams(params),
+    action,
+    params: action === 'buy_betting' ? normalizeBettingParams(params) : normalizeBillParams(params),
     updatedAt: Date.now(),
   };
+}
+
+function createBettingDraft(params) {
+  return {
+    service: 'bills',
+    action: 'buy_betting',
+    params: normalizeBettingParams(params),
+    updatedAt: Date.now(),
+  };
+}
+
+function normalizeBettingParams(params) {
+  return stripEmpty({
+    bill_type: 'betting',
+    type: 'betting',
+    bookmaker: params.bookmaker || null,
+    customer_id: params.customer_id || params.customerId || null,
+    amount: params.amount != null ? Number(params.amount) : null,
+  });
 }
 
 function normalizeTelecomParams(params, userPhone) {
@@ -60,6 +80,7 @@ function normalizeTelecomParams(params, userPhone) {
     network: network && NETWORKS.includes(network) ? network : null,
     amount: params.amount != null ? Number(params.amount) : null,
     plan: params.plan || params.value || null,
+    period: params.period || null,
     phone:
       recipient === 'other' && params.phone
         ? toLocalPhone(params.phone)
@@ -105,6 +126,16 @@ function mergeDraft(draft, text, userPhone) {
     return {
       ...draft,
       params: normalizeBillParams(merged),
+      updatedAt: Date.now(),
+    };
+  }
+
+  if (draft.action === 'buy_betting') {
+    const slot = parseBettingSlot(text, draft);
+    Object.assign(merged, stripEmpty(slot));
+    return {
+      ...draft,
+      params: normalizeBettingParams(merged),
       updatedAt: Date.now(),
     };
   }
@@ -171,6 +202,28 @@ function parseBillSlot(text, draft) {
   return stripEmpty(extractOrderParams(t));
 }
 
+function parseBettingSlot(text, draft) {
+  const missing = getMissingFields(draft);
+  const field = missing[0];
+  const t = String(text || '').trim();
+  const local = extractOrderParams(t);
+
+  if (field === 'bookmaker') {
+    const bm = local.bookmaker || t;
+    if (bm) return { bookmaker: bm };
+  }
+  if (field === 'customer_id') {
+    const id = local.customer_id || (/^[a-zA-Z0-9_-]{4,20}$/.test(t) ? t : null);
+    if (id) return { customer_id: id };
+  }
+  if (field === 'amount') {
+    const amt = extractAmount(t, { minAmount: 100 }) || (/^\d{3,7}$/.test(t) ? Number(t) : null);
+    if (amt) return { amount: amt };
+  }
+
+  return stripEmpty(local);
+}
+
 function getMissingFields(draft) {
   const p = draft.params || {};
   const missing = [];
@@ -201,6 +254,13 @@ function getMissingFields(draft) {
     return missing;
   }
 
+  if (draft.action === 'buy_betting') {
+    if (!p.bookmaker) missing.push('bookmaker');
+    if (!p.customer_id) missing.push('customer_id');
+    if (!p.amount) missing.push('amount');
+    return missing;
+  }
+
   return missing;
 }
 
@@ -221,6 +281,12 @@ function summarizeDraft(draft) {
     if (bt) parts.push(`Bill: *${bt}*`);
     if (p.meter) parts.push(`Meter: *${p.meter}*${p.provider ? ` (${p.provider})` : ''}`);
     if (p.smartcard) parts.push(`Smartcard: *${p.smartcard}*`);
+    if (p.amount) parts.push(`Amount: *₦${Number(p.amount).toLocaleString('en-NG')}*`);
+  }
+
+  if (draft.action === 'buy_betting') {
+    if (p.bookmaker) parts.push(`Bookmaker: *${p.bookmaker}*`);
+    if (p.customer_id) parts.push(`Account ID: *${p.customer_id}*`);
     if (p.amount) parts.push(`Amount: *₦${Number(p.amount).toLocaleString('en-NG')}*`);
   }
 
@@ -257,6 +323,12 @@ function promptForField(draft, field) {
     }
     return `${header}Enter your *${(p.bill_type || p.type || '').toUpperCase()}* smartcard number:`;
   }
+  if (field === 'bookmaker') {
+    return `${header}Which betting platform?\n\n_e.g. Bet9ja, SportyBet, 1xBet, BetKing_`;
+  }
+  if (field === 'customer_id') {
+    return `${header}Enter your *${p.bookmaker || 'betting'}* account / customer ID:`;
+  }
 
   return `${header}Please provide the missing detail.`;
 }
@@ -286,6 +358,14 @@ function draftToAirtime(draft) {
 
 function draftToBill(draft) {
   const p = draft.params;
+  if (draft.action === 'buy_betting') {
+    return {
+      type: 'betting',
+      bookmakerName: p.bookmaker,
+      customerId: p.customer_id,
+      amount: p.amount,
+    };
+  }
   const type = p.bill_type || p.type;
   const bill = { type, amount: p.amount };
   if (type === 'electricity') {
@@ -301,6 +381,7 @@ module.exports = {
   NETWORKS,
   createTelecomDraft,
   createBillDraft,
+  createBettingDraft,
   mergeDraft,
   getMissingFields,
   summarizeDraft,

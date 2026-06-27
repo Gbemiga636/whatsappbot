@@ -18,8 +18,15 @@ const { createContext } = require('../core/context');
 const { getUser } = require('../userStore');
 const { isAffirmation, isDenial, isOrderPhrase, isPurchaseIntent } = require('./nlOrderParser');
 const {
+  buildServicesListText,
+  buildChatAssistantPrompt,
+  isServicesQuestion,
+  isGeneralQuestion,
+} = require('./assistantPrompt');
+const {
   createTelecomDraft,
   createBillDraft,
+  createBettingDraft,
   mergeDraft,
   getMissingFields,
   promptForField,
@@ -40,51 +47,150 @@ function toLocalPhone(phone) {
 }
 
 async function replyHelp(phone) {
-  await whatsapp.sendText(
-    phone,
-    `*Just say what you need* 🌍\n\n` +
-      `_No menu required — type an order directly:_\n\n` +
-      `• "Get me airtime"\n` +
-      `• "Buy MTN airtime 500"\n` +
-      `• "I want airtime 100" → bot asks only for network\n` +
-      `• "Send 1000 Glo airtime to 08012345678"\n` +
-      `• "Top up my MTN line with 500"\n` +
-      `• "Buy 2GB MTN data"\n` +
-      `• "Pay DSTV bill 5000"\n` +
-      `• "Top up wallet 2000"\n` +
-      `• "What's my balance"\n\n` +
-      `At confirm, say *"yes"* or *"pay"* to complete.\n` +
-      `Type *menu* anytime for the button menu.`
-  );
+  await whatsapp.sendText(phone, buildServicesListText());
+}
+
+async function replyListServices(phone) {
+  await whatsapp.sendText(phone, buildServicesListText());
+  return true;
 }
 
 async function handleAiChat(phone, text, session) {
+  if (!config.openai.apiKey) {
+    if (isServicesQuestion(text)) return replyListServices(phone);
+    await whatsapp.sendText(
+      phone,
+      `I'm your Mysogi assistant 🤖\n\n${buildServicesListText().split('\n\n').slice(1).join('\n\n')}`
+    );
+    return true;
+  }
+
   await whatsapp.sendText(phone, '⏳ One moment…');
   const data = session.data || {};
   const response = await ai.chat({
+    model: config.openai.model,
+    temperature: 0.7,
+    max_tokens: 600,
     messages: [
-      {
-        role: 'system',
-        content:
-          'You are Mysogi, Africa\'s WhatsApp super-app assistant for Nigerians. ' +
-          'Users can ORDER by saying things like "buy MTN airtime 500" or "pay DSTV 5000". ' +
-          'If they want to order, tell them the exact phrase to use. Be concise. WhatsApp formatting only.',
-      },
-      ...(data.nlHistory || []).slice(-4),
+      { role: 'system', content: buildChatAssistantPrompt() },
+      ...(data.nlHistory || []).slice(-6),
       { role: 'user', content: text },
     ],
   });
 
-  const history = [...(data.nlHistory || []), { role: 'user', content: text }, { role: 'assistant', content: response.text }];
+  const history = [
+    ...(data.nlHistory || []),
+    { role: 'user', content: text },
+    { role: 'assistant', content: response.text },
+  ];
   setSession(phone, {
     ...session,
     step: 'super_menu',
     activeService: null,
-    data: { ...data, nlHistory: history.slice(-8) },
+    data: { ...data, nlHistory: history.slice(-10) },
   });
 
   await whatsapp.sendText(phone, response.text);
   return true;
+}
+
+async function launchIntoTelecomFlow(phone, partial, ctx) {
+  const airtimeSvc = getService('airtime');
+  const session = getSession(phone) || { step: 'idle', data: {} };
+  const ctxObj = ctx || createContext(phone, {}, session, getUser(phone));
+
+  const airtime = {
+    type: partial.type === 'data' ? 'data' : 'airtime',
+    network: partial.network || null,
+    phone: partial.phone || (partial.recipient === 'other' ? null : toLocalPhone(phone)),
+    recipientType: partial.recipient === 'other' ? 'other' : 'self',
+    amount: partial.amount ? Number(partial.amount) : null,
+    plan: partial.plan || partial.value || null,
+    value: partial.plan || partial.value || null,
+    period: partial.period || null,
+  };
+
+  if (!airtime.network) {
+    return airtimeSvc.showNetworkPicker(ctxObj, airtime.type);
+  }
+
+  if (airtime.recipientType === 'other' && !airtime.phone) {
+    return airtimeSvc.showRecipientPicker(ctxObj, airtime);
+  }
+
+  airtime.phone = airtime.phone || toLocalPhone(phone);
+
+  if (airtime.type === 'data') {
+    if (airtime.plan) {
+      const resolved = await telecom.resolveDataPlan(airtime.network, airtime.plan);
+      if (resolved.ok) {
+        airtime.resolvedPlan = resolved;
+        airtime.amount = resolved.amount;
+        airtime.value = resolved.variationCode || airtime.plan;
+        return airtimeSvc.showConfirm(ctxObj, airtime);
+      }
+    }
+    if (airtime.period) {
+      return airtimeSvc.showDataBundles(ctxObj, airtime, `data_period_${airtime.period}`, 0);
+    }
+    return airtimeSvc.showDataPeriodPicker(ctxObj, airtime);
+  }
+
+  if (airtime.amount && airtime.amount >= 50) {
+    return airtimeSvc.showConfirm(ctxObj, airtime);
+  }
+  return airtimeSvc.showAirtimeAmounts(ctxObj, airtime);
+}
+
+async function resolveBookmakerFromCatalog(name) {
+  const bookmakers = await telecom.getBettingBookmakers();
+  const search = String(name || '').toLowerCase().replace(/\s/g, '');
+  return bookmakers.find((b) => {
+    const bn = b.name.toLowerCase().replace(/\s/g, '');
+    const bc = (b.code || '').toLowerCase();
+    return bn.includes(search) || search.includes(bn) || (bc && search.includes(bc));
+  });
+}
+
+async function launchIntoBettingFlow(phone, params, ctx) {
+  const billsSvc = getService('bills');
+  const session = getSession(phone) || { step: 'idle', data: {} };
+  const ctxObj = ctx || createContext(phone, {}, session, getUser(phone));
+
+  if (!params.bookmaker) {
+    return billsSvc.showBookmakerPicker(ctxObj);
+  }
+
+  const bookmaker = await resolveBookmakerFromCatalog(params.bookmaker);
+  if (!bookmaker) {
+    await whatsapp.sendText(phone, `Couldn't find *${params.bookmaker}*. Pick from the list:`);
+    return billsSvc.showBookmakerPicker(ctxObj);
+  }
+
+  const bill = {
+    type: 'betting',
+    productId: bookmaker.id,
+    bookmakerName: bookmaker.name,
+    customerId: params.customer_id || params.customerId || null,
+    amount: params.amount ? Number(params.amount) : null,
+  };
+
+  if (!bill.customerId) {
+    await whatsapp.sendText(ctxObj.phone, `*${bookmaker.name}*\n\nEnter your *Customer / User ID*:`);
+    setSession(phone, {
+      activeService: 'bills',
+      step: 'enter_detail',
+      data: { bill: { type: 'betting', productId: bookmaker.id, bookmakerName: bookmaker.name } },
+    });
+    return true;
+  }
+
+  if (!bill.amount || bill.amount < 100) {
+    const BETTING_AMOUNTS = [500, 1000, 2000, 5000, 10000];
+    return billsSvc.showAmountPicker(ctxObj, bill, BETTING_AMOUNTS, bookmaker.name);
+  }
+
+  return showBillConfirm(phone, bill);
 }
 
 async function routeToServiceLazy(phone, serviceId, ctx) {
@@ -118,14 +224,26 @@ async function continueFromDraft(phone, draft, session = {}) {
 
   if (missing.length === 0) {
     if (draft.action === 'buy_airtime' || draft.action === 'buy_data') {
-      return completeTelecomDraft(phone, draft);
+      return completeTelecomDraft(phone, draft, session);
     }
     if (draft.action === 'pay_bill') {
       return completeBillDraft(phone, draft);
     }
+    if (draft.action === 'buy_betting') {
+      return completeBettingDraft(phone, draft, session);
+    }
   }
 
   const field = missing[0];
+
+  if ((draft.action === 'buy_data' && field === 'plan') || (draft.action === 'buy_airtime' && field === 'amount' && draft.params.network)) {
+    return launchIntoTelecomFlow(phone, { ...draft.params, type: draft.action === 'buy_data' ? 'data' : 'airtime' }, null);
+  }
+
+  if (draft.action === 'buy_betting' && field === 'bookmaker') {
+    return launchIntoBettingFlow(phone, draft.params, null);
+  }
+
   await whatsapp.sendText(phone, promptForField(draft, field));
 
   setSession(phone, {
@@ -139,21 +257,23 @@ async function continueFromDraft(phone, draft, session = {}) {
   return true;
 }
 
-async function completeTelecomDraft(phone, draft) {
+async function completeTelecomDraft(phone, draft, session = {}) {
   const airtime = draftToAirtime(draft);
 
   if (!airtime.network || !NETWORKS.includes(airtime.network)) {
-    return continueFromDraft(phone, draft);
+    return launchIntoTelecomFlow(phone, { ...draft.params, type: draft.action === 'buy_data' ? 'data' : 'airtime' }, null);
   }
 
   if (airtime.type === 'data') {
     const plan = airtime.plan || airtime.value;
-    if (!plan) return continueFromDraft(phone, draft);
+    if (!plan) {
+      return launchIntoTelecomFlow(phone, { ...draft.params, type: 'data' }, null);
+    }
     airtime.value = plan;
     const resolved = await telecom.resolveDataPlan(airtime.network, plan);
     if (!resolved.ok) {
-      await whatsapp.sendText(phone, resolved.message);
-      return continueFromDraft(phone, draft);
+      await whatsapp.sendText(phone, `${resolved.message}\n\n_Pick a bundle from the list instead._`);
+      return launchIntoTelecomFlow(phone, { ...draft.params, type: 'data', plan: null }, null);
     }
     airtime.resolvedPlan = resolved;
     airtime.amount = resolved.amount;
@@ -179,12 +299,25 @@ async function completeTelecomDraft(phone, draft) {
 async function completeBillDraft(phone, draft) {
   const bill = draftToBill(draft);
   if (!bill.amount || bill.amount < 100) {
-    await whatsapp.sendText(phone, 'Minimum bill payment is *₦100*.');
+    const billsSvc = getService('bills');
+    const ctxObj = createContext(phone, {}, getSession(phone), getUser(phone));
+    if (bill.type === 'electricity' && bill.meter) {
+      const ELECTRIC_AMOUNTS = [1000, 2000, 3000, 5000, 10000];
+      return billsSvc.showAmountPicker(ctxObj, bill, ELECTRIC_AMOUNTS, `${bill.provider || 'Electricity'}`);
+    }
+    if (bill.smartcard && bill.type && bill.type !== 'betting') {
+      return billsSvc.showCablePackages(ctxObj, bill.type, bill.smartcard);
+    }
+    await whatsapp.sendText(phone, 'Minimum bill payment is *₦100*. Enter amount:');
     const nextDraft = { ...draft, params: { ...draft.params, amount: null } };
     return continueFromDraft(phone, nextDraft);
   }
   await showBillConfirm(phone, bill);
   return true;
+}
+
+async function completeBettingDraft(phone, draft, session = {}) {
+  return launchIntoBettingFlow(phone, draft.params, createContext(phone, {}, session, getUser(phone)));
 }
 
 async function tryContinueDraft(phone, text, session) {
@@ -259,6 +392,23 @@ async function startBillFromIntent(phone, params, ctx) {
   return continueFromDraft(phone, draft, session);
 }
 
+async function startBettingFromIntent(phone, params, ctx) {
+  const session = getSession(phone) || { step: 'idle', data: {} };
+  const existing = session.data?.nlDraft;
+
+  let mergedParams = { ...params, bill_type: 'betting' };
+  if (existing?.action === 'buy_betting') {
+    mergedParams = { ...existing.params, ...mergedParams };
+  }
+
+  const draft = createBettingDraft(mergedParams);
+  const missing = getMissingFields(draft);
+  if (missing.length === 0) {
+    return completeBettingDraft(phone, draft, session);
+  }
+  return continueFromDraft(phone, draft, session);
+}
+
 async function tryConfirmFromText(phone, text, session) {
   if (session.step !== 'confirm' || !session.activeService) return false;
 
@@ -313,8 +463,18 @@ async function executeNaturalLanguage(phone, intent, ctx) {
     return true;
   }
 
+  if (action === 'list_services') {
+    return replyListServices(phone);
+  }
+
   if (action === 'help') {
     await replyHelp(phone);
+    return true;
+  }
+
+  if (action === 'greet') {
+    await whatsapp.sendText(phone, `Hello! 👋 I'm your Mysogi assistant.\n\nJust tell me what you need — airtime, data, bills, betting, wallet, and more.\n\n_Type *services* to see everything I can do._`);
+    await showSuperAppMenu(phone);
     return true;
   }
 
@@ -367,6 +527,10 @@ async function executeNaturalLanguage(phone, intent, ctx) {
     return startBillFromIntent(phone, params, ctx);
   }
 
+  if (action === 'buy_betting') {
+    return startBettingFromIntent(phone, params, ctx);
+  }
+
   if (action === 'activate_credit') {
     const { handleCreditAction } = require('../credit/creditHandler');
     return handleCreditAction(phone, 'credit_activate', session);
@@ -403,9 +567,12 @@ function shouldTryNaturalLanguage(session, incoming) {
   const text = incoming.text.trim();
   if (text.length < 2) return false;
 
-  if (/^(menu|home|start|hi|hello|hey|help|0)$/i.test(text)) return false;
+  if (isServicesQuestion(text)) return true;
+
+  if (/^(menu|home|start|0)$/i.test(text)) return false;
 
   if (session.step === NL_GATHER_STEP || session.data?.nlDraft) {
+    if (isNewOrderOverride(text, session.data.nlDraft)) return true;
     if (/^(mtn|glo|airtel|9mobile|etisalat)$/i.test(text)) return true;
     if (/^\d{2,7}$/.test(text)) return true;
     return true;
@@ -419,6 +586,8 @@ function shouldTryNaturalLanguage(session, incoming) {
     }
     return true;
   }
+
+  if (isGeneralQuestion(text) && config.openai.apiKey) return true;
 
   if (session.activeService && session.step !== NL_GATHER_STEP && /^[₦]?\d+([.,]\d+)?$/.test(text)) {
     return false;
@@ -443,15 +612,24 @@ async function tryNaturalLanguageRoute(phone, incoming, ctx) {
 
   const { parseNaturalLanguage } = require('./intentRouter');
   const intent = await parseNaturalLanguage(incoming.text);
-  if (!intent) return false;
 
-  const publicActions = new Set(['menu', 'help', 'login', 'signup', 'chat']);
+  if (!intent) {
+    if (isGeneralQuestion(incoming.text) && config.openai.apiKey) {
+      return handleAiChat(phone, incoming.text, session);
+    }
+    return false;
+  }
+
+  const publicActions = new Set(['menu', 'help', 'list_services', 'login', 'signup', 'chat', 'greet']);
   if (requiresAuth(phone) && !publicActions.has(intent.action)) {
     await promptLoginRequired(phone);
     return true;
   }
 
   if (intent.confidence === 'low' && !intent.service) {
+    if (intent.action === 'chat' || isGeneralQuestion(incoming.text)) {
+      return handleAiChat(phone, incoming.text, session);
+    }
     if (!isOrderPhrase(incoming.text)) return false;
   }
 

@@ -41,7 +41,7 @@ const DISCO_CODES = {
   BEDC: 'benin',
 };
 
-let catalogCache = { at: 0, airtime: null, data: null, dataSme: null, electricity: null, cable: null };
+let catalogCache = { at: 0, airtime: null, data: null, dataSme: null, electricity: null, cable: null, betting: null };
 const CACHE_MS = 5 * 60 * 1000;
 
 function getApiKey() {
@@ -171,15 +171,16 @@ async function getCatalogs() {
   const now = Date.now();
   if (catalogCache.at && now - catalogCache.at < CACHE_MS) return catalogCache;
 
-  const [airtime, data, dataSme, electricity, cable] = await Promise.all([
+  const [airtime, data, dataSme, electricity, cable, betting] = await Promise.all([
     fetchCatalog('/airtime'),
     fetchCatalog('/data'),
     fetchCatalog('/data/sme'),
     fetchCatalog('/electricity'),
     fetchCatalog('/cable'),
+    fetchCatalog('/betting'),
   ]);
 
-  catalogCache = { at: now, airtime, data, dataSme, electricity, cable };
+  catalogCache = { at: now, airtime, data, dataSme, electricity, cable, betting };
   return catalogCache;
 }
 
@@ -245,11 +246,13 @@ function collectDataPlans(network) {
     if (!product?.variations?.length) continue;
 
     for (const v of product.variations) {
+      const amount = Number(v.amount) || 0;
+      if (!amount) continue;
       plans.push({
         planId: String(product.id),
         variationCode: v.code,
         planName: v.name,
-        amount: Number(v.amount) || 0,
+        amount: amount,
         dataType,
         network: net,
       });
@@ -312,7 +315,7 @@ function requirePin() {
   return null;
 }
 
-async function purchaseAirtime({ network, phone, amount, type, plan }) {
+async function purchaseAirtime({ network, phone, amount, type, plan, resolvedPlan }) {
   if (!getApiKey()) {
     return {
       ok: true,
@@ -329,7 +332,7 @@ async function purchaseAirtime({ network, phone, amount, type, plan }) {
   const requestRef = buildRef();
 
   if (type === 'data') {
-    const resolved = await resolveDataPlan(network, plan);
+    const resolved = resolvedPlan?.ok ? resolvedPlan : await resolveDataPlan(network, plan);
     if (!resolved.ok) return resolved;
 
     const path = resolved.dataType === 'sme' ? '/data/sme' : '/data';
@@ -404,7 +407,9 @@ async function payBill(bill) {
   const billType = String(bill.type || '').toLowerCase();
 
   if (billType === 'electricity') {
-    const product = resolveElectricityProduct(bill.provider);
+    const product = bill.productId
+      ? { id: bill.productId }
+      : resolveElectricityProduct(bill.provider);
     if (!product?.id) {
       return {
         ok: false,
@@ -429,21 +434,83 @@ async function payBill(bill) {
       return { ok: false, message: `Cable provider "${billType}" not found on AutoSyncNG.` };
     }
 
-    const variation = findCableVariation(product, bill.amount);
     const smartcard = bill.smartcard || bill.meter;
+    const amount = Number(bill.variation?.amount || bill.amount);
+    const variationCode = bill.variationCode || bill.variation?.variationCode || 'none';
 
     return request('POST', '/cable', {
       request_ref: requestRef,
       iuc_number: String(smartcard),
-      product_id: product.id,
-      variation_code: 'none',
-      type: 'renew',
-      amount: String(variation?.amount || Number(bill.amount)),
+      product_id: bill.productId || product.id,
+      variation_code: variationCode,
+      type: bill.cableAction || 'renew',
+      amount: String(amount),
       pin: getPin(),
     });
   }
 
+  if (billType === 'betting') {
+    return purchaseBetting({
+      productId: bill.productId,
+      customerId: bill.customerId,
+      amount: bill.amount,
+    });
+  }
+
   return { ok: false, message: `Bill type "${bill.type}" is not supported on AutoSyncNG.` };
+}
+
+async function purchaseBetting({ productId, customerId, amount }) {
+  if (!getApiKey()) {
+    return {
+      ok: true,
+      message: `[Demo] Betting top-up ₦${amount}. Add AUTOSYNCNG_API_KEY.`,
+      simulated: true,
+    };
+  }
+
+  const pinErr = requirePin();
+  if (pinErr) return pinErr;
+
+  return request('POST', '/betting', {
+    request_ref: buildRef(),
+    customer_id: String(customerId),
+    product_id: productId,
+    amount: String(Number(amount)),
+    pin: getPin(),
+  });
+}
+
+async function getElectricityDiscos() {
+  await getCatalogs();
+  return (catalogCache.electricity?.products || []).map((p) => ({
+    id: String(p.id),
+    name: p.name,
+    code: p.code,
+  }));
+}
+
+async function getBettingBookmakers() {
+  await getCatalogs();
+  return (catalogCache.betting?.products || []).map((p) => ({
+    id: String(p.id),
+    name: p.name,
+    code: p.code,
+  }));
+}
+
+async function getCablePackages(billType) {
+  await getCatalogs();
+  const product = resolveCableProduct(billType);
+  if (!product) return [];
+  return (product.variations || [])
+    .filter((v) => Number(v.amount) > 0)
+    .map((v) => ({
+      productId: String(product.id),
+      variationCode: v.code,
+      name: v.name,
+      amount: Number(v.amount),
+    }));
 }
 
 async function getBalance() {
@@ -476,9 +543,13 @@ async function getBalance() {
 module.exports = {
   purchaseAirtime,
   payBill,
+  purchaseBetting,
   getBalance,
   fetchDataPlans,
   resolveDataPlan,
+  getElectricityDiscos,
+  getBettingBookmakers,
+  getCablePackages,
   buildRef,
   getCatalogs,
 };

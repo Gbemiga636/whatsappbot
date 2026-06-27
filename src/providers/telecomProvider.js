@@ -1,7 +1,7 @@
 /**
  * Telecom / bills provider router — switch via .env
  *
- * BILLS_PROVIDER=autosyncng → AutoSyncNG (airtime, data, electricity, cable)
+ * BILLS_PROVIDER=autosyncng → AutoSyncNG (airtime, data, electricity, cable, betting)
  * BILLS_PROVIDER=vtpass      → VTPass (all services)
  */
 
@@ -21,19 +21,43 @@ function vtpassConfigured() {
   return !!(config.bills.vtpass.apiKey && config.bills.vtpass.secretKey);
 }
 
+function autosyncngActive() {
+  return getProviderName() === 'autosyncng';
+}
+
 async function purchaseAirtime(opts) {
   return getProvider().purchaseAirtime(opts);
 }
 
 async function resolveDataPlan(network, planText) {
-  if (getProviderName() === 'autosyncng') {
+  if (autosyncngActive()) {
     return autosyncng.resolveDataPlan(network, planText);
   }
   return { ok: true, amount: 500, planName: planText, planId: planText };
 }
 
+async function fetchDataPlans(network) {
+  if (autosyncngActive()) return autosyncng.fetchDataPlans(network);
+  return [];
+}
+
+async function getElectricityDiscos() {
+  if (autosyncngActive()) return autosyncng.getElectricityDiscos();
+  return [];
+}
+
+async function getBettingBookmakers() {
+  if (autosyncngActive()) return autosyncng.getBettingBookmakers();
+  return [];
+}
+
+async function getCablePackages(billType) {
+  if (autosyncngActive()) return autosyncng.getCablePackages(billType);
+  return [];
+}
+
 async function payBill(bill) {
-  if (getProviderName() === 'autosyncng') {
+  if (autosyncngActive()) {
     const result = await autosyncng.payBill(bill);
     if (!result.ok && result.fallback === 'vtpass' && vtpassConfigured()) {
       const vtResult = await vtpass.payBill(bill);
@@ -60,6 +84,10 @@ module.exports = {
   getProviderName,
   purchaseAirtime,
   resolveDataPlan,
+  fetchDataPlans,
+  getElectricityDiscos,
+  getBettingBookmakers,
+  getCablePackages,
   payBill,
   getBalance,
 };
