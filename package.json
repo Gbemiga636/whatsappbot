@@ -12,6 +12,7 @@
     "test:autosyncng": "node scripts/test-autosyncng.js",
     "test:clubkonnect": "node scripts/test-clubkonnect.js",
     "test:chowdeck": "node scripts/test-chowdeck.js",
+    "test:ideliver": "node scripts/test-ideliver.js",
     "list:autosyncng": "node scripts/list-autosyncng-plans.js",
     "test:provider": "node scripts/test-provider-success.js",
     "test:wallet": "node scripts/test-wallet-purchase.js",

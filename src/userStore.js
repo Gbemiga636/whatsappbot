@@ -87,8 +87,17 @@ function isAuthenticated(phone) {
   return u?.authMode === 'authenticated' && !!u?.email;
 }
 
+function isGuest(phone) {
+  const u = getUser(phoneKey(phone));
+  return u?.authMode === 'guest';
+}
+
+function canUseServices(phone) {
+  return isAuthenticated(phone) || isGuest(phone);
+}
+
 function isLinked(phone) {
   return isAuthenticated(phone);
 }
 
-module.exports = { getUser, setUser, isAuthenticated, isLinked };
+module.exports = { getUser, setUser, isAuthenticated, isGuest, canUseServices, isLinked };

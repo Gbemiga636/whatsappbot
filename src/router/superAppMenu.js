@@ -5,7 +5,7 @@
 
 const whatsapp = require('../whatsapp');
 const { getSession, setSession } = require('../sessionStore');
-const { getUser, isAuthenticated } = require('../userStore');
+const { getUser, isAuthenticated, isGuest } = require('../userStore');
 const { getService } = require('./serviceRegistry');
 const wallet = require('../wallet/walletService');
 
@@ -38,7 +38,7 @@ function buildRows(serviceIds) {
     .map((s) => s.menuRow());
 }
 
-function buildMainMenuRows(loggedIn) {
+function buildMainMenuRows(loggedIn, guest) {
   const rows = [...MAIN_VTU_ROWS];
 
   if (loggedIn) {
@@ -46,11 +46,16 @@ function buildMainMenuRows(loggedIn) {
     rows.push({ id: 'svc_wallet', title: '💳 My wallet', description: 'Balance & top-up' });
     rows.push({ id: 'svc_ai', title: '🤖 AI assistant', description: 'Ask anything' });
     rows.push({ id: 'svc_more_menu', title: '➕ More services', description: 'Ads, partners & more' });
+  } else if (guest) {
+    rows.push({ id: 'auth_signup', title: '✨ Create account', description: 'Wallet & saved history' });
+    rows.push({ id: 'auth_login', title: '🔐 Log in', description: 'Existing Mysogi account' });
+    rows.push({ id: 'svc_ai', title: '🤖 AI assistant', description: 'Ask anything' });
+    rows.push({ id: 'svc_more_menu', title: '➕ More services', description: 'Browse what\'s available' });
   } else {
+    rows.push({ id: 'auth_guest', title: '👤 Continue as guest', description: 'Pay via Paystack at checkout' });
     rows.push({ id: 'auth_login', title: '🔐 Log in', description: 'Email & password' });
     rows.push({ id: 'auth_signup', title: '✨ Sign up', description: 'Create account' });
     rows.push({ id: 'svc_ai', title: '🤖 AI assistant', description: 'Ask anything' });
-    rows.push({ id: 'svc_more_menu', title: '➕ More services', description: 'Browse what\'s available' });
   }
 
   return rows.slice(0, 10);
@@ -59,14 +64,20 @@ function buildMainMenuRows(loggedIn) {
 async function showSuperAppMenu(phone, options = {}) {
   const user = getUser(phone);
   const loggedIn = isAuthenticated(phone);
+  const guest = isGuest(phone);
   const name = formatDisplayName(user);
   const balance = loggedIn ? await wallet.getBalance(phone) : 0;
 
-  const header = loggedIn
-    ? `*Welcome, ${name}!* 🌍\n💳 Wallet: *${wallet.formatNaira(balance)}*`
-    : `*Welcome to Mysogi* 🌍`;
+  let header;
+  if (loggedIn) {
+    header = `*Welcome, ${name}!* 🌍\n💳 Wallet: *${wallet.formatNaira(balance)}*`;
+  } else if (guest) {
+    header = `*Guest mode* 👤\n_Pay with Paystack when you checkout_`;
+  } else {
+    header = `*Welcome to Mysogi* 🌍`;
+  }
 
-  const safeRows = buildMainMenuRows(loggedIn);
+  const safeRows = buildMainMenuRows(loggedIn, guest);
 
   await whatsapp.sendList(
     phone,
@@ -78,7 +89,7 @@ async function showSuperAppMenu(phone, options = {}) {
   setSession(phone, {
     step: SUPER_MENU_STEP,
     activeService: null,
-    data: { authMode: loggedIn ? 'authenticated' : 'guest', menuPage: 1 },
+    data: { authMode: loggedIn ? 'authenticated' : guest ? 'guest' : 'pending', menuPage: 1 },
   });
 
   if (loggedIn && options.offerTopUp && balance < 100) {
@@ -111,7 +122,10 @@ async function showMoreServicesMenu(phone) {
   setSession(phone, {
     step: SUPER_MENU_STEP,
     activeService: null,
-    data: { authMode: 'authenticated', menuPage: 2 },
+    data: {
+      authMode: isAuthenticated(phone) ? 'authenticated' : isGuest(phone) ? 'guest' : 'pending',
+      menuPage: 2,
+    },
   });
 }
 

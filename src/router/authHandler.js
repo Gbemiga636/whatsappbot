@@ -4,7 +4,7 @@
 
 const whatsapp = require('../whatsapp');
 const { getSession, setSession } = require('../sessionStore');
-const { getUser, isAuthenticated } = require('../userStore');
+const { getUser, isAuthenticated, isGuest } = require('../userStore');
 const { showSuperAppMenu } = require('./superAppMenu');
 const { isSupabaseReady, signOut, restoreUserByPhone } = require('../auth/supabaseAuth');
 const supabaseFlow = require('../flows/supabaseAuthFlow');
@@ -41,7 +41,7 @@ async function promptLoginRequired(phone) {
   const normalizedPhone = normalizePhone(phone);
   await whatsapp.sendText(
     normalizedPhone,
-    '🔐 *Login required*\n\nCreate an account or log in to use Mysogi services.'
+    '🔐 *Choose how to continue*\n\nLog in, sign up, or continue as guest to use Mysogi services.'
   );
   const next = await supabaseFlow.showAuthWelcome(normalizedPhone);
   setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
@@ -56,6 +56,11 @@ async function handleAuthSteps(phone, message, session) {
   const data = session.data || {};
 
   if (useSupabaseAuth()) {
+    if (choice === 'auth_guest' && session.step === 'auth_welcome') {
+      const next = await supabaseFlow.startGuest(normalizedPhone);
+      setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
+      return true;
+    }
     if (choice === 'auth_login' && session.step === 'auth_welcome') {
       const next = await supabaseFlow.startLogin(normalizedPhone);
       setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
@@ -137,6 +142,11 @@ async function handleAuthSteps(phone, message, session) {
 async function handleAuthAction(phone, action) {
   const normalizedPhone = normalizePhone(phone);
   switch (action) {
+    case 'auth_guest': {
+      const next = await supabaseFlow.startGuest(normalizedPhone);
+      setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
+      return true;
+    }
     case 'auth_login': {
       if (useSupabaseAuth()) {
         const next = await supabaseFlow.startLogin(normalizedPhone);
@@ -194,7 +204,7 @@ async function handleAuthAction(phone, action) {
 }
 
 function requiresAuth(phone) {
-  return !isAuthenticated(phone);
+  return !isAuthenticated(phone) && !isGuest(phone);
 }
 
 module.exports = {

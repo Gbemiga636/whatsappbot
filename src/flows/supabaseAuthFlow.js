@@ -66,16 +66,44 @@ async function showAuthWelcome(phone) {
     phone,
     `*Welcome to Mysogi* 🌍\n\n` +
       `Africa's WhatsApp Super App — banking, bills, food, shopping, loans, travel, AI & more.\n\n` +
-      `*Create an account* or *log in* to get started.\n` +
+      `*Create an account*, *log in*, or *continue as guest*.\n` +
+      `_Guests pay securely via Paystack at checkout — no signup needed._\n\n` +
       `_Your WhatsApp number: +${formatPhone(phone)}_`
   );
 
   await whatsapp.sendButtons(phone, 'How would you like to continue?', [
+    { id: 'auth_guest', title: '👤 Continue as guest' },
     { id: 'auth_login', title: '🔐 Log in' },
     { id: 'auth_signup', title: '✨ Sign up' },
   ]);
 
   return { step: 'auth_welcome', data: { authMode: 'pending' } };
+}
+
+async function startGuest(phone) {
+  const { setUser } = require('../userStore');
+  const wallet = require('../wallet/walletService');
+  const { showSuperAppMenu } = require('../router/superAppMenu');
+
+  await wallet.ensureWalletUser(phone);
+  setUser(phone, {
+    authMode: 'guest',
+    email: null,
+    mysogiToken: null,
+    firstName: null,
+    lastName: null,
+  });
+
+  await whatsapp.sendText(
+    phone,
+    `👤 *Guest mode*\n\n` +
+      `Browse and order airtime, data, bills, food & more.\n` +
+      `When you pay, we'll send a *Paystack link* (card, bank, USSD).\n\n` +
+      `_Create an account anytime to use your wallet & save history._`
+  );
+
+  await showSuperAppMenu(phone);
+  return { step: 'super_menu', data: { authMode: 'guest' } };
 }
 
 async function startLogin(phone) {
@@ -274,6 +302,7 @@ async function handleOtpCode(phone, text, data) {
 
 module.exports = {
   showAuthWelcome,
+  startGuest,
   startLogin,
   startSignup,
   startOtpLogin,

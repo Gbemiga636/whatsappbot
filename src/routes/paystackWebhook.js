@@ -1,11 +1,13 @@
 /**
- * Paystack webhook — credit wallet on successful payment.
+ * Paystack webhook — wallet top-up and guest purchases.
  */
 
 const crypto = require('crypto');
 const config = require('../config');
 const paystack = require('../providers/paystack');
 const wallet = require('../wallet/walletService');
+const guestPurchase = require('../wallet/guestPurchase');
+const { getSupabase } = require('../db/supabase');
 const logger = require('../core/logger');
 
 function verifySignature(rawBody, signature) {
@@ -13,6 +15,13 @@ function verifySignature(rawBody, signature) {
   if (!secret || !signature) return false;
   const hash = crypto.createHmac('sha512', secret).update(rawBody).digest('hex');
   return hash === signature;
+}
+
+async function getTransactionType(reference) {
+  const db = getSupabase();
+  if (!db) return null;
+  const { data: tx } = await db.from('transactions').select('metadata, type').eq('reference', reference).maybeSingle();
+  return tx?.metadata?.type || tx?.type || null;
 }
 
 async function handlePaystackWebhook(req, res) {
@@ -35,6 +44,46 @@ async function handlePaystackWebhook(req, res) {
     const verify = await paystack.verifyPayment(reference);
     if (!verify.ok) {
       return res.status(400).json({ ok: false, message: 'Verification failed' });
+    }
+
+    const txType = (await getTransactionType(reference)) || data.metadata?.type;
+    const isGuest = txType === 'guest_purchase';
+
+    if (isGuest) {
+      const result = await guestPurchase.processGuestPurchaseWebhook(reference, amount);
+      if (result.ok && result.phone && result.pending && result.purchase) {
+        const alreadyNotified = await guestPurchase.wasGuestPurchaseNotified(reference);
+        if (!result.alreadyProcessed || !alreadyNotified) {
+          try {
+            await guestPurchase.notifyGuestPurchaseResult({
+              phone: result.phone,
+              pending: result.pending,
+              purchase: result.purchase,
+            });
+          } catch (err) {
+            logger.warn('Guest purchase WhatsApp notify failed', { error: err.message });
+          }
+        }
+      } else if (!result.ok && result.needsRefund) {
+        logger.error('Guest purchase fulfillment failed after payment', {
+          reference,
+          phone: result.phone,
+          reason: result.purchase?.message,
+        });
+        try {
+          const whatsapp = require('../whatsapp');
+          await whatsapp.sendText(
+            result.phone,
+            `⚠️ *Payment received but order failed*\n\n` +
+              `Ref: *${reference}*\n` +
+              `${result.purchase?.message || 'Please contact support with this reference.'}\n\n` +
+              `_Our team will assist with a refund if needed._`
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+      return res.json({ ok: true });
     }
 
     const result = await wallet.processTopUpWebhook(reference, amount);
@@ -72,7 +121,7 @@ function paystackCallback(req, res) {
     `<html><body style="font-family:sans-serif;text-align:center;padding:40px">` +
       `<h2>✅ Payment received</h2>` +
       `<p>Reference: ${reference || '—'}</p>` +
-      `<p>Return to WhatsApp — your Mysogi wallet will update shortly.</p>` +
+      `<p>Return to WhatsApp — your order or wallet will update shortly.</p>` +
       `</body></html>`
   );
 }

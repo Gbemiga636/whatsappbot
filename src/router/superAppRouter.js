@@ -3,7 +3,7 @@
  */
 
 const { getSession, setSession, loadSessionFromDb } = require('../sessionStore');
-const { getUser, isAuthenticated } = require('../userStore');
+const { getUser, isAuthenticated, isGuest } = require('../userStore');
 const { createContext } = require('../core/context');
 const logger = require('../core/logger');
 const { showSuperAppMenu, showMoreServicesMenu, isSuperMenuStep } = require('./superAppMenu');
@@ -49,7 +49,7 @@ function isGreeting(text) {
 }
 
 async function showEntry(phone) {
-  if (isAuthenticated(phone)) {
+  if (isAuthenticated(phone) || isGuest(phone)) {
     return showSuperAppMenu(phone);
   }
   const next = await supabaseFlow.showAuthWelcome(phone);
@@ -196,7 +196,7 @@ async function handleIncomingMessage(from, message) {
   }
 
   // Auth menu actions
-  if (['auth_login', 'auth_signup', 'auth_logout', 'auth_profile'].includes(choice)) {
+  if (['auth_login', 'auth_signup', 'auth_guest', 'auth_logout', 'auth_profile'].includes(choice)) {
     const handled = await handleAuthAction(phone, choice);
     if (handled) return;
   }
@@ -214,9 +214,11 @@ async function handleIncomingMessage(from, message) {
     if (handled) return;
   }
 
-  // Catch missed Paystack top-up confirmations (text only — never block list/button taps)
+  // Catch missed Paystack confirmations (text only — never block list/button taps)
   if (!incoming.listId && !incoming.buttonId) {
     if (await wallet.tryCompletePendingTopUp(phone)) return;
+    const guestPurchase = require('../wallet/guestPurchase');
+    if (await guestPurchase.tryCompletePendingGuestPurchase(phone)) return;
   }
 
   // Natural language — skip for interactive list/button during active service wizards

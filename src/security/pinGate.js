@@ -189,4 +189,5 @@ module.exports = {
   isPinRequired,
   guardPurchase,
   resumePendingPurchase,
+  sendPurchaseResult,
 };

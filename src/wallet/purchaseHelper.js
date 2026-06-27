@@ -5,8 +5,10 @@
 const whatsapp = require('../whatsapp');
 const wallet = require('../wallet/walletService');
 const pinGate = require('../security/pinGate');
+const guestPurchase = require('./guestPurchase');
 const telecom = require('../providers/telecomProvider');
 const { getSession } = require('../sessionStore');
+const { isGuest } = require('../userStore');
 
 async function sendTopUpPrompt(phone, shortfall, context = '') {
   const amount = Math.max(Math.ceil(shortfall), 100);
@@ -143,7 +145,45 @@ async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute
   return purchase;
 }
 
+async function confirmAndPayAsGuest(phone, opts) {
+  const session = getSession(phone) || {};
+  const purchaseId = opts.purchaseId || `GST_${Date.now()}_${require('crypto').randomBytes(4).toString('hex')}`;
+  const snapshot = guestPurchase.buildPendingSnapshot(session);
+  const pricing = wallet.formatWalletSummary(opts.baseAmount);
+
+  await whatsapp.sendText(
+    phone,
+    `💳 *Guest checkout*\n\n` +
+      `${opts.summaryText}\n\n` +
+      `${pricing.text}\n\n` +
+      `Tap below to pay securely with Paystack (card, bank, USSD).`
+  );
+
+  const payment = await guestPurchase.initiateGuestPurchase(phone, {
+    ...opts,
+    purchaseId,
+    snapshot,
+  });
+
+  if (!payment.ok) {
+    await whatsapp.sendText(phone, `❌ ${payment.message || 'Could not start payment.'}`);
+    return payment;
+  }
+
+  await whatsapp.sendCtaUrl(
+    phone,
+    `Pay *${wallet.formatNaira(payment.total)}* — your order is fulfilled automatically after payment.`,
+    'Pay with Paystack',
+    payment.paymentUrl
+  );
+
+  return { ok: true, awaitingPayment: true, reference: payment.reference, total: payment.total };
+}
+
 async function confirmAndPay(phone, opts) {
+  if (isGuest(phone)) {
+    return confirmAndPayAsGuest(phone, opts);
+  }
   if (pinGate.isPinRequired() && !opts.skipPin) {
     return pinGate.guardPurchase(phone, {
       method: 'wallet',
@@ -158,6 +198,7 @@ async function confirmAndPay(phone, opts) {
 module.exports = {
   sendTopUpPrompt,
   confirmAndPay,
+  confirmAndPayAsGuest,
   executePendingPurchase,
   wallet,
 };

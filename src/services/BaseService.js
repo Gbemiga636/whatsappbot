@@ -64,8 +64,8 @@ class BaseService {
   }
 
   async ensureAuth(ctx) {
-    const { isAuthenticated } = require('../userStore');
-    if (!isAuthenticated(ctx.phone)) {
+    const { isAuthenticated, isGuest } = require('../userStore');
+    if (!isAuthenticated(ctx.phone) && !isGuest(ctx.phone)) {
       const { promptLoginRequired } = require('../router/authHandler');
       await promptLoginRequired(ctx.phone);
       return false;
