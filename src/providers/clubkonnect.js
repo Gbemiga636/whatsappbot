@@ -122,7 +122,7 @@ function isCatalogPayload(data) {
   if (data.balance != null) return false;
   const keys = Object.keys(data).map((k) => k.toLowerCase());
   return keys.some((k) =>
-    ['mtn', 'glo', 'airtel', 'etisalat', '9mobile', 'products', 'dataplans', 'plans', 'dstv', 'gotv', 'mobile_network'].some(
+    ['mtn', 'glo', 'airtel', 'etisalat', '9mobile', 'products', 'dataplans', 'plans', 'dstv', 'gotv', 'tv_id', 'mobile_network'].some(
       (n) => k.includes(n)
     )
   );
@@ -485,25 +485,60 @@ async function getBettingBookmakers() {
   return BETTING_COMPANIES.map((b) => ({ id: b.id, name: b.name, code: b.code }));
 }
 
+function cableProviderKey(billType) {
+  const map = { dstv: 'DStv', gotv: 'GOtv', startimes: 'Startimes' };
+  return map[String(billType || '').toLowerCase()] || null;
+}
+
 function parseCablePackages(raw, billType) {
   if (!raw || typeof raw !== 'object') return [];
-  const code = CABLE_CODES[String(billType || '').toLowerCase()];
-  if (!code) return [];
+  const providerKey = cableProviderKey(billType);
+  if (!providerKey) return [];
 
-  let packages = [];
-  if (Array.isArray(raw)) packages = raw;
-  else if (Array.isArray(raw[code])) packages = raw[code];
-  else if (Array.isArray(raw.packages)) packages = raw.packages;
-  else {
-    for (const [key, value] of Object.entries(raw)) {
-      if (Array.isArray(value) && key.toLowerCase().includes(code)) {
-        packages = value;
+  const tvRoot = raw.TV_ID || raw.tv_id || raw.Tv_Id || raw;
+  let entries = tvRoot?.[providerKey];
+  if (!entries) {
+    for (const [key, value] of Object.entries(tvRoot || {})) {
+      if (key.toLowerCase() === providerKey.toLowerCase()) {
+        entries = value;
         break;
       }
     }
   }
 
-  return packages
+  const list = Array.isArray(entries) ? entries : entries ? [entries] : [];
+  const packages = [];
+
+  for (const entry of list) {
+    const products = entry?.PRODUCT || entry?.Product || entry?.products;
+    if (Array.isArray(products)) {
+      for (const item of products) {
+        const variationCode = item.PACKAGE_ID || item.Package_ID || item.package_id || item.code;
+        const name = item.PACKAGE_NAME || item.Package_Name || item.name;
+        const amount = Number(
+          item.PACKAGE_AMOUNT || item.Package_Amount || item.PRODUCT_DISCOUNT_AMOUNT || item.amount || 0
+        );
+        if (!variationCode || !amount) continue;
+        packages.push({
+          productId: entry.ID || providerKey.toLowerCase(),
+          variationCode: String(variationCode),
+          name: String(name || variationCode),
+          amount,
+        });
+      }
+    }
+  }
+
+  if (packages.length) return packages;
+
+  // Legacy flat shape fallback
+  const code = CABLE_CODES[String(billType || '').toLowerCase()];
+  let legacy = [];
+  if (Array.isArray(raw)) legacy = raw;
+  else if (Array.isArray(raw[code])) legacy = raw[code];
+  else if (Array.isArray(raw.packages)) legacy = raw.packages;
+
+  return legacy
     .map((item) => ({
       productId: code,
       variationCode: item.package || item.Package || item.code || item.Code || item.name,
@@ -570,8 +605,13 @@ async function payBill(bill) {
       BETTING_COMPANIES.find(
         (b) =>
           b.id === String(bill.productId || bill.bookmakerId || '').toLowerCase() ||
-          b.code.toLowerCase() === String(bill.bookmakerName || '').toLowerCase()
-      ) || BETTING_COMPANIES[0];
+          b.code.toLowerCase() === String(bill.bookmakerName || '').toLowerCase() ||
+          b.name.toLowerCase() === String(bill.bookmakerName || '').toLowerCase()
+      ) || BETTING_COMPANIES.find((b) => b.id === String(bill.productId || '').toLowerCase());
+
+    if (!bookmaker) {
+      return { ok: false, message: 'Betting provider not selected. Pick a bookmaker from the list.' };
+    }
 
     return request('APIBettingV1', {
       BettingCompany: bookmaker.code,

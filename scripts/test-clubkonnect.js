@@ -40,6 +40,10 @@ async function run() {
   const catalogs = await clubkonnect.getCatalogs();
   console.log('[Catalogs]');
   console.log('  Data plans:', catalogs.dataPlans?.length || 0);
+  console.log('  DSTV packages:', (await clubkonnect.getCablePackages('dstv')).length);
+  console.log('  GOtv packages:', (await clubkonnect.getCablePackages('gotv')).length);
+  console.log('  StarTimes packages:', (await clubkonnect.getCablePackages('startimes')).length);
+  console.log('  Betting:', (await clubkonnect.getBettingBookmakers()).map((b) => b.name).join(', '));
   console.log('  Electricity:', catalogs.electricity ? 'loaded' : 'none');
   console.log('  Cable TV:', catalogs.cable ? 'loaded' : 'none');
 
