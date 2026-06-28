@@ -65,9 +65,42 @@ async function deleteContact(ownerPhone, nameKey) {
   const contacts = { ...getContactsMap(user) };
   const key = normalizeNameKey(nameKey);
   if (!contacts[key]) return { ok: false, message: 'Contact not found.' };
+  const removed = contacts[key];
   delete contacts[key];
   setUser(ownerPhone, { metadata: { ...(user.metadata || {}), contacts } });
-  return { ok: true };
+  return { ok: true, contact: removed };
+}
+
+async function updateContact(ownerPhone, nameKey, { phone, newName }) {
+  const user = getUser(ownerPhone);
+  const contacts = { ...getContactsMap(user) };
+  const key = normalizeNameKey(nameKey);
+  const existing = contacts[key];
+  if (!existing) return { ok: false, message: `No contact named *${nameKey}*.` };
+
+  const nextPhone = phone ? toLocalPhone(phone) : existing.phone;
+  const nextName = (newName || existing.name).trim();
+  if (!nextName || nextPhone.length < 11) {
+    return { ok: false, message: 'Valid name and 11-digit number required.' };
+  }
+
+  const nextKey = normalizeNameKey(nextName);
+  if (nextKey !== key) delete contacts[key];
+
+  contacts[nextKey] = {
+    name: nextName,
+    phone: nextPhone,
+    savedAt: existing.savedAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  setUser(ownerPhone, { metadata: { ...(user.metadata || {}), contacts } });
+  return { ok: true, contact: contacts[nextKey] };
+}
+
+function getContactByKey(ownerPhone, nameKey) {
+  const user = getUser(ownerPhone);
+  return getContactsMap(user)[normalizeNameKey(nameKey)] || null;
 }
 
 function findContactMatches(contactsMap, query) {
@@ -145,9 +178,15 @@ function extractPhonesFromText(text) {
 
 function extractRecipientNames(text) {
   const t = String(text || '');
-  const match = t.match(
-    /\b(?:for|to)\s+([a-zA-Z][\w\s,'&-]+?)(?:\s+(?:on|with|using|each|worth|@)?\s*(?:mtn|glo|airtel|9mobile|etisalat|airtime|data|credit|recharge|\d|₦|ngn)|$)/i
-  );
+  const patterns = [
+    /\b(?:send|buy|get|recharge|load)\s+(?:\w+\s+){0,3}(?:airtime|data|credit)\s+(?:to|for)\s+([a-zA-Z][\w\s,'&-]+?)$/i,
+    /\b(?:for|to)\s+([a-zA-Z][\w\s,'&-]+?)(?:\s+(?:on|with|using|each|worth|@)?\s*(?:mtn|glo|airtel|9mobile|etisalat|airtime|data|credit|recharge|\d|₦|ngn)|$)/i,
+  ];
+  let match = null;
+  for (const p of patterns) {
+    match = t.match(p);
+    if (match) break;
+  }
   if (!match) return [];
 
   return match[1]
@@ -166,11 +205,29 @@ function formatContactLine(c) {
   return `*${c.name}* — ${formatPhoneDisplay(c.phone)}`;
 }
 
+function contactsHelpText() {
+  return (
+    `📇 *Saved contacts*\n\n` +
+    `*Save a contact:*\n` +
+    `save contact Mama 08012345678\n\n` +
+    `*Or* share their contact card from WhatsApp (📎 → Contact).\n\n` +
+    `*Manage anytime:*\n` +
+    `• *my contacts* — view all\n` +
+    `• *edit contact Mama 08099998888* — update\n` +
+    `• *delete contact Mama* — remove\n\n` +
+    `*Then order by name:*\n` +
+    `MTN 500 airtime for Mama\n` +
+    `buy data for John`
+  );
+}
+
 module.exports = {
   toLocalPhone,
   listContacts,
   saveContact,
   deleteContact,
+  updateContact,
+  getContactByKey,
   resolveContactName,
   resolveContactNames,
   findContactMatches,
@@ -179,5 +236,6 @@ module.exports = {
   extractRecipientNames,
   parseRecipientsFromText,
   formatContactLine,
+  contactsHelpText,
   normalizeNameKey,
 };

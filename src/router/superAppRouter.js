@@ -24,6 +24,7 @@ const pinPortal = require('../security/pinPortal');
 const wallet = require('../wallet/walletService');
 const transactionPin = require('../security/transactionPin');
 const { normalizePhone } = require('../utils/phone');
+const contactHandler = require('../contacts/contactHandler');
 
 const QUICK_VTU_ENTRIES = {
   menu_airtime: { service: 'airtime', entry: 'airtime' },
@@ -177,10 +178,19 @@ async function handleIncomingMessage(from, message) {
   const choice = incoming.buttonId || incoming.listId || incoming.text;
   const textLower = (incoming.text || '').trim().toLowerCase();
 
-  if (incoming.text && /^save\s+contact\s+/i.test(incoming.text)) {
-    const airtimeSvc = getService('airtime');
-    await airtimeSvc.trySaveContactFromText(ctx, incoming.text);
-    return;
+  if (choice?.startsWith('contact_')) {
+    const handled = await contactHandler.handleChoice(phone, choice, getSession(phone) || session);
+    if (handled) return;
+  }
+
+  if (incoming.text) {
+    const cmdHandled = await contactHandler.handleContactCommand(phone, incoming.text);
+    if (cmdHandled) return;
+  }
+
+  if (incoming.contacts && !contactHandler.shouldDeferContactToService(session)) {
+    const handled = await contactHandler.handleSharedContact(phone, incoming.contacts, session);
+    if (handled) return;
   }
 
   if (choice === 'wallet_pin_set') {
@@ -258,7 +268,7 @@ async function handleIncomingMessage(from, message) {
   }
 
   // Greeting → auth welcome if not logged in, else super menu
-  if (isGreeting(incoming.text) && !session.activeService) {
+  if (isGreeting(incoming.text) && (!session.activeService || session.activeService === 'contacts')) {
     return showEntry(phone);
   }
 

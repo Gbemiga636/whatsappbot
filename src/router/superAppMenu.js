@@ -6,6 +6,7 @@
 const whatsapp = require('../whatsapp');
 const { getSession, setSession } = require('../sessionStore');
 const { getUser, isAuthenticated, isGuest } = require('../userStore');
+const contactHandler = require('../contacts/contactHandler');
 const { getService } = require('./serviceRegistry');
 const wallet = require('../wallet/walletService');
 
@@ -78,6 +79,10 @@ async function showSuperAppMenu(phone, options = {}) {
   }
 
   const safeRows = buildMainMenuRows(loggedIn, guest);
+
+  if (loggedIn || guest) {
+    await contactHandler.sendContactsIntro(phone);
+  }
 
   const menuBody =
     `${header}\n\n` +

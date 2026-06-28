@@ -104,10 +104,19 @@ class AirtimeService extends BaseService {
   }
 
   async showNetworkPicker(ctx, type) {
+    const { getSession } = require('../sessionStore');
+    const current = getSession(ctx.phone) || ctx.session || { data: {} };
+    const prevAirtime = current.data?.airtime || {};
     const flowType = type === 'data' ? 'data' : 'airtime';
+    const contactNote =
+      prevAirtime.contactName && prevAirtime.phone
+        ? `\n\n*${prevAirtime.contactName}* — ${prevAirtime.phone}`
+        : prevAirtime.phone
+          ? `\n\n${prevAirtime.phone}`
+          : '';
     await this.list(
       ctx.phone,
-      flowType === 'data' ? '*Pick network for data*' : '*Pick network for airtime*',
+      (flowType === 'data' ? '*Pick network for data*' : '*Pick network for airtime*') + contactNote,
       'Networks',
       [{
         title: 'Network',
@@ -120,8 +129,33 @@ class AirtimeService extends BaseService {
     );
     await this.updateSession(ctx.phone, {
       step: this.STEPS.PICK_NETWORK,
-      data: { airtime: { type: flowType }, dataPeriod: null, dataBundles: null, dataPage: 0 },
+      data: {
+        airtime: { ...prevAirtime, type: flowType },
+        dataPeriod: null,
+        dataBundles: null,
+        dataPage: 0,
+      },
     });
+  }
+
+  async startTelecomForContact(ctx, { type, name, phone }) {
+    const localPhone = toLocalPhone(phone);
+    const flowType = type === 'data' ? 'data' : 'airtime';
+    await this.updateSession(ctx.phone, {
+      step: this.STEPS.PICK_NETWORK,
+      data: {
+        airtime: {
+          type: flowType,
+          phone: localPhone,
+          recipientType: 'other',
+          contactName: name || null,
+        },
+        dataPeriod: null,
+        dataBundles: null,
+        dataPage: 0,
+      },
+    });
+    return this.showNetworkPicker(ctx, flowType);
   }
 
   async showRecipientPicker(ctx, airtime) {
@@ -668,9 +702,13 @@ class AirtimeService extends BaseService {
       if (!network) return this.showMenu(ctx);
 
       if (isDataFlow(airtime) || (step === this.STEPS.PICK_NETWORK && data?.airtime?.type === 'data')) {
+        const next = { type: 'data', network, phone: airtime?.phone, recipientType: airtime?.recipientType, contactName: airtime?.contactName };
+        if (next.phone) return this.showDataPeriodPicker(ctx, next);
         return this.showDataPeriodPicker(ctx, { type: 'data', network });
       }
       if (isAirtimeFlow(airtime) || data?.airtime?.type === 'airtime') {
+        const next = { type: 'airtime', network, phone: airtime?.phone, recipientType: airtime?.recipientType, contactName: airtime?.contactName };
+        if (next.phone) return this.showAirtimeAmounts(ctx, next);
         return this.showRecipientPicker(ctx, { type: 'airtime', network });
       }
       return this.showMenu(ctx);
