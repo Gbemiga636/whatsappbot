@@ -130,7 +130,7 @@ async function initiateGuestPurchase(phone, opts) {
   const db = getSupabase();
   if (db) {
     await wallet.ensureWalletUser(normPhone);
-    await db.from('transactions').insert({
+    const { error: insertErr } = await db.from('transactions').insert({
       phone: normPhone,
       service: opts.service,
       type: 'guest_purchase',

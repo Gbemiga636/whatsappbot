@@ -79,12 +79,26 @@ async function showSuperAppMenu(phone, options = {}) {
 
   const safeRows = buildMainMenuRows(loggedIn, guest);
 
-  await whatsapp.sendList(
-    phone,
-    `${header}\n\n*Just type your order* — e.g. *"MTN 500 airtime for Mama"* or *"airtime for 080…, 081…"*\n\nOr tap a service below.`,
-    'Open menu',
-    [{ title: 'Mysogi services', rows: safeRows }]
-  );
+  const menuBody =
+    `${header}\n\n` +
+    `*Just type your order* — e.g. *MTN 500 airtime for Mama* or *airtime for 080…, 081…*\n\n` +
+    `Or tap a service below.`;
+
+  try {
+    await whatsapp.sendList(phone, menuBody, 'Open menu', [{ title: 'Mysogi services', rows: safeRows }]);
+  } catch (err) {
+    const logger = require('../core/logger');
+    logger.error('sendList failed for main menu', { phone, error: err.message });
+    await whatsapp.sendButtons(
+      phone,
+      `${menuBody}\n\n_Tap a quick option:_`,
+      [
+        { id: 'menu_airtime', title: 'Airtime' },
+        { id: 'menu_data', title: 'Data' },
+        { id: 'svc_main_menu', title: 'Refresh menu' },
+      ]
+    );
+  }
 
   setSession(phone, {
     step: SUPER_MENU_STEP,

@@ -320,12 +320,24 @@ function formatPhoneDisplay(phone) {
 }
 
 async function ensureWalletUser(phone) {
+  const key = normalizePhone(phone);
   const db = getSupabase();
-  if (!db) return;
-  await db.from('whatsapp_users').upsert(
-    { phone: normalizePhone(phone), auth_mode: 'guest', wallet_balance: 0 },
-    { onConflict: 'phone', ignoreDuplicates: true }
-  );
+  if (!db) return { ok: true, local: true };
+
+  try {
+    const { error } = await db.from('whatsapp_users').upsert(
+      { phone: key, auth_mode: 'guest', wallet_balance: 0 },
+      { onConflict: 'phone', ignoreDuplicates: true }
+    );
+    if (error) {
+      logger.warn('ensureWalletUser failed', { phone: key, error: error.message });
+      return { ok: false, message: error.message };
+    }
+    return { ok: true };
+  } catch (err) {
+    logger.warn('ensureWalletUser error', { phone: key, error: err.message });
+    return { ok: false, message: err.message };
+  }
 }
 
 async function initiateTopUp(payerPhone, amount, { beneficiaryPhone, topupType = 'self' } = {}) {
@@ -721,6 +733,7 @@ module.exports = {
   canAffordPurchase,
   creditWallet,
   debitWallet,
+  ensureWalletUser,
   initiateTopUp,
   processTopUpWebhook,
   notifyWalletTopUpSuccess,

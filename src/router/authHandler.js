@@ -100,7 +100,7 @@ async function handleAuthSteps(phone, message, session) {
   }
 
   if (useSupabaseAuth()) {
-    if (choice === 'auth_guest' && session.step === 'auth_welcome') {
+    if (choice === 'auth_guest') {
       const next = await supabaseFlow.startGuest(normalizedPhone);
       setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
       return true;

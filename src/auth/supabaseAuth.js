@@ -106,7 +106,11 @@ async function restoreUserByPhone(phone) {
       userId: data.mysogi_user_id,
     });
   } else if (data.auth_mode === 'guest') {
-    Object.assign(patch, { authMode: 'guest' });
+    Object.assign(patch, {
+      authMode: 'guest',
+      email: null,
+      mysogiToken: null,
+    });
   }
 
   const current = getUser(normalizedPhone) || { phone: normalizedPhone };

@@ -84,8 +84,13 @@ async function startGuest(phone) {
   const { setUser } = require('../userStore');
   const wallet = require('../wallet/walletService');
   const { showSuperAppMenu } = require('../router/superAppMenu');
+  const logger = require('../core/logger');
 
-  await wallet.ensureWalletUser(phone);
+  const ensured = await wallet.ensureWalletUser(phone);
+  if (!ensured.ok) {
+    logger.warn('Guest wallet row skipped', { phone, reason: ensured.message });
+  }
+
   setUser(phone, {
     authMode: 'guest',
     email: null,
