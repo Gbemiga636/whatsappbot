@@ -136,11 +136,19 @@ async function handleIncomingMessage(from, message) {
     buttonId: message.interactive?.button_reply?.id || '',
     listId: message.interactive?.list_reply?.id || '',
     media: ['image', 'document', 'video', 'audio'].includes(message.type) ? message : null,
+    contacts: message.type === 'contacts' && Array.isArray(message.contacts) ? message.contacts : null,
     type: message.type,
     id: message.id,
   };
 
-  if (!incoming.text && !incoming.buttonId && !incoming.listId && !incoming.media && message.type !== 'location') {
+  if (
+    !incoming.text &&
+    !incoming.buttonId &&
+    !incoming.listId &&
+    !incoming.media &&
+    !incoming.contacts &&
+    message.type !== 'location'
+  ) {
     const whatsapp = require('../whatsapp');
     await whatsapp.sendText(
       phone,
@@ -168,6 +176,12 @@ async function handleIncomingMessage(from, message) {
   let ctx = createContext(phone, message, session, user);
   const choice = incoming.buttonId || incoming.listId || incoming.text;
   const textLower = (incoming.text || '').trim().toLowerCase();
+
+  if (incoming.text && /^save\s+contact\s+/i.test(incoming.text)) {
+    const airtimeSvc = getService('airtime');
+    await airtimeSvc.trySaveContactFromText(ctx, incoming.text);
+    return;
+  }
 
   if (choice === 'wallet_pin_set') {
     await pinPortal.promptSetPin(phone);

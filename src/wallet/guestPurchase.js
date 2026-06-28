@@ -17,6 +17,9 @@ function buildPendingSnapshot(session) {
     airtime: session.data?.airtime ? { ...session.data.airtime } : null,
     bill: session.data?.bill ? { ...session.data.bill } : null,
     food: session.data?.food ? JSON.parse(JSON.stringify(session.data.food)) : null,
+    bulkAirtime: session.data?.bulkAirtime
+      ? JSON.parse(JSON.stringify(session.data.bulkAirtime))
+      : null,
   };
 }
 
@@ -28,6 +31,24 @@ function buildExecute(pending) {
   const food = snapshot?.food;
 
   if (service === 'airtime') {
+    const bulk = snapshot?.bulkAirtime;
+    if (bulk?.recipients?.length) {
+      return async () => {
+        const results = [];
+        for (const r of bulk.recipients) {
+          const res = await telecom.purchaseAirtime({
+            network: bulk.network,
+            phone: r.phone,
+            amount: bulk.amount,
+            type: 'airtime',
+          });
+          results.push({ ...r, ok: res.ok });
+        }
+        const okCount = results.filter((x) => x.ok).length;
+        if (!okCount) return { ok: false, message: 'All transfers failed' };
+        return { ok: true, message: `Airtime sent to ${okCount}/${bulk.recipients.length} numbers.` };
+      };
+    }
     if (!airtime) return null;
     return () =>
       telecom.purchaseAirtime({

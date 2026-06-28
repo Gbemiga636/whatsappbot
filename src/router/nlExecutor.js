@@ -23,6 +23,7 @@ const {
   isServicesQuestion,
   isGeneralQuestion,
 } = require('./assistantPrompt');
+const contactStore = require('../contacts/contactStore');
 const {
   createTelecomDraft,
   createBillDraft,
@@ -115,6 +116,8 @@ const STRUCTURED_FLOW_STEPS = {
     'airtime_pick_amount',
     'airtime_enter_amount',
     'airtime_confirm',
+    'airtime_bulk_recipients',
+    'airtime_bulk_confirm',
     // legacy step ids (sessions mid-flow before deploy)
     'pick_network',
     'pick_recipient',
@@ -206,10 +209,82 @@ async function handleAiChat(phone, text, session) {
   return true;
 }
 
+async function launchIntoBulkAirtime(phone, partial, ctx) {
+  const airtimeSvc = getService('airtime');
+  const ctxObj = ctx || createContext(phone, {}, getSession(phone), getUser(phone));
+
+  const recipients = [];
+  for (const p of partial.phones || []) {
+    recipients.push({ name: p, phone: contactStore.toLocalPhone(p) });
+  }
+  if (partial.contact_names?.length) {
+    const { resolved, ambiguous, missing } = await contactStore.resolveContactNames(phone, partial.contact_names);
+    if (ambiguous.length) {
+      const lines = ambiguous.map((a) => `*${a.query}*: ${a.matches.map((m) => m.name).join(', ')}`).join('\n');
+      await whatsapp.sendText(phone, `Which contact?\n\n${lines}\n\nSay the full name or number.`);
+      return true;
+    }
+    if (missing.length) {
+      await whatsapp.sendText(
+        phone,
+        `I don't have *${missing.join(', ')}* saved.\n\nShare their contact card or: *save contact Name 080…*`
+      );
+      return true;
+    }
+    recipients.push(...resolved);
+  }
+
+  const seed = {
+    recipients: airtimeSvc.dedupeRecipients(recipients),
+    network: partial.network || null,
+    amount: partial.amount || null,
+  };
+
+  if (!seed.recipients.length) {
+    return airtimeSvc.startBulkFlow(ctxObj);
+  }
+
+  await airtimeSvc.startBulkFlow(ctxObj, seed);
+  const bulkState = { type: 'airtime', recipients: seed.recipients, network: seed.network, amount: seed.amount };
+  if (seed.network && seed.amount && seed.amount >= 100) {
+    return airtimeSvc.showBulkConfirm(ctxObj, bulkState);
+  }
+  if (seed.network && seed.recipients.length) {
+    return airtimeSvc.showBulkAmountPicker(ctxObj, bulkState);
+  }
+  return true;
+}
+
 async function launchIntoTelecomFlow(phone, partial, ctx) {
   const airtimeSvc = getService('airtime');
   const session = getSession(phone) || { step: 'idle', data: {} };
   const ctxObj = ctx || createContext(phone, {}, session, getUser(phone));
+
+  if (
+    partial.bulk ||
+    (partial.phones && partial.phones.length > 1) ||
+    (partial.contact_names && partial.contact_names.length > 1)
+  ) {
+    return launchIntoBulkAirtime(phone, partial, ctxObj);
+  }
+
+  if (partial.recipient === 'named' && partial.contact_names?.length === 1 && !partial.phone) {
+    const resolved = await contactStore.resolveContactName(phone, partial.contact_names[0]);
+    if (resolved.ok) {
+      partial.phone = resolved.contact.phone;
+      partial.recipient = 'other';
+    } else if (resolved.ambiguous) {
+      await whatsapp.sendText(
+        phone,
+        `Several matches for *${partial.contact_names[0]}*:\n` +
+          resolved.matches.map((m) => `• ${m.name} — ${m.phone}`).join('\n')
+      );
+      return true;
+    } else {
+      await whatsapp.sendText(phone, resolved.message);
+      return true;
+    }
+  }
 
   const airtime = {
     type: partial.type === 'data' ? 'data' : 'airtime',

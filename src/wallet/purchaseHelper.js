@@ -46,6 +46,42 @@ async function executePendingPurchase(phone, pending) {
   const bill = pending.snapshot?.bill || session.data?.bill;
 
   if (service === 'airtime') {
+    const bulk = pending.snapshot?.bulkAirtime || session.data?.bulkAirtime;
+    if (bulk?.recipients?.length) {
+      const totalBase = bulk.amount * bulk.recipients.length;
+      execute = async () => {
+        const results = [];
+        for (const r of bulk.recipients) {
+          const res = await telecom.purchaseAirtime({
+            network: bulk.network,
+            phone: r.phone,
+            amount: bulk.amount,
+            type: 'airtime',
+          });
+          results.push({ ...r, ok: res.ok, message: res.message });
+        }
+        const okCount = results.filter((x) => x.ok).length;
+        if (!okCount) return { ok: false, message: results[0]?.message || 'All transfers failed' };
+        const lines = results
+          .filter((x) => x.ok)
+          .slice(0, 10)
+          .map((x) => `✓ ${x.name} (${x.phone})`)
+          .join('\n');
+        return {
+          ok: true,
+          message: `Sent to *${okCount}/${bulk.recipients.length}* numbers.\n${lines}`,
+          results,
+        };
+      };
+      return _confirmAndPay(phone, {
+        service,
+        baseAmount: totalBase,
+        summaryText: `${bulk.network} airtime ×${bulk.recipients.length}`,
+        execute,
+        notify: false,
+        purchaseId: pending.purchaseId,
+      });
+    }
     if (!airtime) return { ok: false, message: 'Airtime session expired. Start again.' };
     execute = () =>
       telecom.purchaseAirtime({

@@ -81,7 +81,7 @@ async function showSuperAppMenu(phone, options = {}) {
 
   await whatsapp.sendList(
     phone,
-    `${header}\n\n*Just type your order* — e.g. *"get me MTN airtime 500"* or *"buy 2GB data"*\n\nOr tap a service below.`,
+    `${header}\n\n*Just type your order* — e.g. *"MTN 500 airtime for Mama"* or *"airtime for 080…, 081…"*\n\nOr tap a service below.`,
     'Open menu',
     [{ title: 'Mysogi services', rows: safeRows }]
   );

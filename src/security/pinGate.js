@@ -23,6 +23,9 @@ async function guardPurchase(phone, pending) {
       airtime: session.data?.airtime ? { ...session.data.airtime } : null,
       bill: session.data?.bill ? { ...session.data.bill } : null,
       food: session.data?.food ? JSON.parse(JSON.stringify(session.data.food)) : null,
+      bulkAirtime: session.data?.bulkAirtime
+        ? JSON.parse(JSON.stringify(session.data.bulkAirtime))
+        : null,
     },
   };
 
@@ -129,6 +132,14 @@ async function sendPurchaseResult(phone, pending, purchase) {
       }
       return;
     }
+  }
+
+  if (pending.service === 'airtime' && (pending.snapshot?.bulkAirtime || session.data?.bulkAirtime)) {
+    const bulk = pending.snapshot?.bulkAirtime || session.data?.bulkAirtime;
+    await safeSend(
+      `✅ *Bulk airtime sent!*\n\n${purchase.result?.message || ''}\n\nRef: *${purchase.reference}*`
+    );
+    return;
   }
 
   if (pending.service === 'airtime') {

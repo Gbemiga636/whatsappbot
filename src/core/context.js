@@ -14,6 +14,11 @@ function parseIncoming(message) {
         }
       : null;
 
+  const contacts =
+    message.type === 'contacts' && Array.isArray(message.contacts)
+      ? message.contacts
+      : null;
+
   return {
     text: (message.text?.body || message.button?.text || '').trim(),
     buttonId: message.interactive?.button_reply?.id || '',
@@ -21,6 +26,7 @@ function parseIncoming(message) {
     flowResponse: message.interactive?.nfm_reply || null,
     media: isMedia ? message : null,
     location,
+    contacts,
     messageId: message.id || '',
     timestamp: message.timestamp || '',
     messageType: message.type || 'text',
@@ -42,6 +48,9 @@ function createContext(from, message, session, user) {
     },
     get location() {
       return incoming.location || null;
+    },
+    get contacts() {
+      return incoming.contacts || null;
     },
     get step() {
       return this.session.step;

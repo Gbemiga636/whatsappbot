@@ -3,6 +3,10 @@
  */
 
 const { isServicesQuestion } = require('./assistantPrompt');
+const {
+  extractPhonesFromText,
+  extractRecipientNames,
+} = require('../contacts/contactStore');
 
 const BETTING_ALIASES = [
   { match: /bet\s*9ja|bet9ja/i, name: 'Bet9ja' },
@@ -49,20 +53,34 @@ function extractAmount(text, { minAmount = 50 } = {}) {
 }
 
 function extractPhone(text) {
-  const t = String(text || '');
-  const m =
-    t.match(/(?:for|to)\s*(234\d{10}|0\d{10})/i) ||
-    t.match(/\b(234\d{10})\b/) ||
-    t.match(/\b(0\d{10})\b/);
-  return m ? m[1] : null;
+  const phones = extractPhonesFromText(text);
+  return phones[0] || null;
+}
+
+function extractPhones(text) {
+  return extractPhonesFromText(text);
 }
 
 function extractRecipient(text) {
   const t = String(text || '').toLowerCase();
   if (/for\s+(myself|me|my\s+self|my\s+number|my\s+phone)/i.test(t)) return 'self';
+  if (extractPhonesFromText(text).length > 1) return 'bulk';
+  if (extractRecipientNames(text).length > 1) return 'bulk';
+  if (/\b(for|to)\s+[a-zA-Z]{2,}/i.test(t) && extractRecipientNames(text).length === 1) return 'named';
   if (extractPhone(text)) return 'other';
   if (/for\s+(someone|another|friend|him|her|them)/i.test(t)) return 'other';
   return 'self';
+}
+
+function isBulkTelecomRequest(text) {
+  const t = String(text || '').toLowerCase();
+  if (/\b(multiple|several|many|bulk|group)\b/.test(t) && /\b(airtime|data|recharge|numbers?)\b/.test(t)) {
+    return true;
+  }
+  if (extractPhonesFromText(text).length > 1) return true;
+  if (extractRecipientNames(text).length > 1) return true;
+  if (/\bfor\b.+\b(and|,)\b/i.test(t) && /\b(airtime|data|recharge|credit)\b/i.test(t)) return true;
+  return false;
 }
 
 function extractBillType(text) {
@@ -215,7 +233,10 @@ function extractOrderParams(text) {
     network: normalizeNetwork(text),
     amount: plan ? null : amount,
     phone: extractPhone(text),
+    phones: extractPhones(text),
+    contact_names: extractRecipientNames(text),
     recipient: extractRecipient(text),
+    bulk: isBulkTelecomRequest(text) || undefined,
     bill_type,
     meter: isBillOrder && bill_type === 'electricity' ? billMeter.meter : null,
     provider: isBillOrder && bill_type === 'electricity' ? billMeter.provider : null,
@@ -425,6 +446,9 @@ module.exports = {
   isDataRequest,
   isWalletTopUpRequest,
   isBettingRequest,
+  isBulkTelecomRequest,
+  extractPhones,
+  extractRecipientNames,
   resolveProductType,
   resolveTelecomAction,
   normalizeNetwork,

@@ -1,6 +1,7 @@
 const BaseService = require('../BaseService');
 const telecom = require('../../providers/telecomProvider');
 const { confirmAndPay, wallet } = require('../../wallet/purchaseHelper');
+const contactStore = require('../../contacts/contactStore');
 const {
   filterBundlesByPeriod,
   paginateItems,
@@ -66,6 +67,8 @@ class AirtimeService extends BaseService {
         PICK_AMOUNT: 'airtime_pick_amount',
         ENTER_AMOUNT: 'airtime_enter_amount',
         CONFIRM: 'airtime_confirm',
+        BULK_RECIPIENTS: 'airtime_bulk_recipients',
+        BULK_CONFIRM: 'airtime_bulk_confirm',
       },
     });
   }
@@ -77,6 +80,8 @@ class AirtimeService extends BaseService {
       rows: [
         { id: 'airtime_buy', title: '💳 Airtime', description: 'Top up in seconds' },
         { id: 'airtime_data', title: '📶 Data bundles', description: 'Pick from live plans' },
+        { id: 'airtime_bulk', title: '👥 Multiple people', description: 'Same airtime for many numbers' },
+        { id: 'airtime_contacts', title: '📇 My contacts', description: 'Saved names & numbers' },
       ],
     }]);
     await this.updateSession(ctx.phone, { step: this.STEPS.MENU, data: { airtime: null } });
@@ -311,6 +316,271 @@ class AirtimeService extends BaseService {
     await this.updateSession(ctx.phone, { step: this.STEPS.CONFIRM, data: { airtime } });
   }
 
+  async startBulkFlow(ctx, seed = {}) {
+    const recipients = seed.recipients || [];
+    await this.reply(
+      ctx.phone,
+      `*👥 Airtime for multiple people*\n\n` +
+        `Send recipients any of these ways:\n` +
+        `• Numbers: \`08011112222, 08033334444\`\n` +
+        `• Saved names: \`Mama, John\`\n` +
+        `• *Share contact cards* from WhatsApp (📎 → Contact)\n\n` +
+        `_We can't read your phone contacts automatically — share or save them here first._\n\n` +
+        `When done, tap *Continue*.`
+    );
+    await this.updateSession(ctx.phone, {
+      step: this.STEPS.BULK_RECIPIENTS,
+      data: {
+        bulkAirtime: {
+          type: 'airtime',
+          recipients,
+          network: seed.network || null,
+          amount: seed.amount || null,
+        },
+      },
+    });
+    if (recipients.length) await this.showBulkRecipientSummary(ctx, recipients);
+  }
+
+  dedupeRecipients(list) {
+    const seen = new Set();
+    return list.filter((r) => {
+      const p = toLocalPhone(r.phone);
+      if (!p || p.length < 11 || seen.has(p)) return false;
+      seen.add(p);
+      return true;
+    });
+  }
+
+  async resolveRecipientsFromInput(ownerPhone, text) {
+    const { phones, names } = contactStore.parseRecipientsFromText(text);
+    const fromNumbers = phones.map((phone) => ({ name: phone, phone }));
+    const { resolved, ambiguous, missing } = await contactStore.resolveContactNames(ownerPhone, names);
+    return {
+      recipients: [...fromNumbers, ...resolved],
+      ambiguous,
+      missing,
+    };
+  }
+
+  async addBulkRecipients(ctx, incoming) {
+    const bulk = ctx.data?.bulkAirtime || { type: 'airtime', recipients: [] };
+    let added = [];
+
+    if (incoming.contacts) {
+      const shared = contactStore.parseSharedContacts({ contacts: incoming.contacts });
+      for (const c of shared) {
+        await contactStore.saveContact(ctx.phone, c);
+        added.push(c);
+      }
+    }
+
+    if (incoming.text?.trim()) {
+      const result = await this.resolveRecipientsFromInput(ctx.phone, incoming.text);
+      if (result.ambiguous?.length) {
+        const lines = result.ambiguous
+          .map((a) => `*${a.query}*: ${a.matches.map((m) => m.name).join(', ')}`)
+          .join('\n');
+        await this.reply(
+          ctx.phone,
+          `Which contact did you mean?\n\n${lines}\n\nReply with the full name or number.`
+        );
+        return;
+      }
+      if (result.missing?.length) {
+        await this.reply(
+          ctx.phone,
+          `I don't have *${result.missing.join(', ')}* saved yet.\n\n` +
+            `Share their WhatsApp contact card, or save them:\n` +
+            `_*save contact Name 08012345678*_`
+        );
+      }
+      added = [...added, ...result.recipients];
+    }
+
+    if (!added.length) {
+      await this.reply(ctx.phone, 'No valid numbers found. Send numbers, names, or share a contact card.');
+      return;
+    }
+
+    const recipients = this.dedupeRecipients([...(bulk.recipients || []), ...added]);
+    await this.updateSession(ctx.phone, {
+      step: this.STEPS.BULK_RECIPIENTS,
+      data: { bulkAirtime: { ...bulk, recipients } },
+    });
+    await this.reply(ctx.phone, `✅ Added ${added.length} recipient(s).`);
+    return this.showBulkRecipientSummary(ctx, recipients, ctx.data?.bulkAirtime);
+  }
+
+  async showBulkRecipientSummary(ctx, recipients, bulkExtra = {}) {
+    const bulk = { ...(ctx.data?.bulkAirtime || bulkExtra), recipients };
+    const lines = recipients
+      .slice(0, 15)
+      .map((r, i) => `${i + 1}. ${r.name} — ${r.phone}`)
+      .join('\n');
+    const more = recipients.length > 15 ? `\n_…and ${recipients.length - 15} more_` : '';
+
+    await this.buttons(
+      ctx.phone,
+      `*Recipients (${recipients.length})*\n\n${lines}${more}\n\nAdd more or continue.`,
+      [
+        { id: 'bulk_continue', title: 'Continue' },
+        { id: 'bulk_clear', title: 'Clear all' },
+      ]
+    );
+    await this.updateSession(ctx.phone, {
+      step: this.STEPS.BULK_RECIPIENTS,
+      data: { bulkAirtime: bulk },
+    });
+  }
+
+  async showBulkConfirm(ctx, bulk) {
+    const count = bulk.recipients.length;
+    const totalBase = bulk.amount * count;
+    const afford = await wallet.canAffordPurchase(ctx.phone, totalBase);
+    const pricing = wallet.formatWalletSummary(totalBase);
+
+    if (!afford.ok) {
+      const { sendTopUpPrompt } = require('../../wallet/purchaseHelper');
+      await this.reply(
+        ctx.phone,
+        `💳 *Not enough balance*\n\n` +
+          `${count} × ${wallet.formatNaira(bulk.amount)} = ${wallet.formatNaira(totalBase)}\n` +
+          `${pricing.text}\n\nBalance: *${wallet.formatNaira(afford.balance)}*`
+      );
+      return sendTopUpPrompt(ctx.phone, afford.shortfall, 'bulk airtime');
+    }
+
+    const preview = bulk.recipients
+      .slice(0, 8)
+      .map((r) => `• ${r.name} (${r.phone})`)
+      .join('\n');
+    const more = count > 8 ? `\n_…and ${count - 8} more_` : '';
+
+    await this.buttons(
+      ctx.phone,
+      `*Confirm bulk airtime*\n\n` +
+        `Network: *${bulk.network}*\n` +
+        `Each: *${wallet.formatNaira(bulk.amount)}*\n` +
+        `Recipients: *${count}*\n\n` +
+        `${preview}${more}\n\n${pricing.text}`,
+      [
+        { id: 'bulk_confirm', title: 'Pay & send all' },
+        { id: 'air_cancel', title: 'Cancel' },
+      ]
+    );
+    await this.updateSession(ctx.phone, { step: this.STEPS.BULK_CONFIRM, data: { bulkAirtime: bulk } });
+  }
+
+  async executeBulkPurchase(ctx, bulk) {
+    const count = bulk.recipients.length;
+    const totalBase = bulk.amount * count;
+    const summary = `${bulk.network} airtime ×${count} @ ${wallet.formatNaira(bulk.amount)}`;
+
+    const purchase = await confirmAndPay(ctx.phone, {
+      service: 'airtime',
+      baseAmount: totalBase,
+      summaryText: summary,
+      execute: async () => {
+        const results = [];
+        for (const r of bulk.recipients) {
+          const res = await telecom.purchaseAirtime({
+            network: bulk.network,
+            phone: r.phone,
+            amount: bulk.amount,
+            type: 'airtime',
+          });
+          results.push({ ...r, ok: res.ok, message: res.message });
+        }
+        const okCount = results.filter((x) => x.ok).length;
+        if (!okCount) {
+          return { ok: false, message: results[0]?.message || 'All transfers failed' };
+        }
+        const failed = results.filter((x) => !x.ok);
+        const lines = results
+          .filter((x) => x.ok)
+          .slice(0, 10)
+          .map((x) => `✓ ${x.name} (${x.phone})`)
+          .join('\n');
+        let msg = `Sent to *${okCount}/${count}* numbers.\n${lines}`;
+        if (failed.length) {
+          msg += `\n\n_${failed.length} failed — wallet refund applies to failed portion if applicable._`;
+        }
+        return { ok: true, message: msg, results };
+      },
+    });
+
+    if (purchase?.awaitingPayment || purchase?.awaitingPin || purchase?.awaitingPinSetup) return;
+
+    if (purchase?.ok) {
+      await this.reply(
+        ctx.phone,
+        `✅ *Bulk airtime complete!*\n\n${purchase.result?.message || ''}\n\nRef: *${purchase.reference}*`
+      );
+    } else if (!purchase?.prompted && !purchase?.insufficient) {
+      await this.reply(ctx.phone, `❌ ${purchase?.message || 'Bulk purchase failed.'}`);
+    }
+    return this.showMenu(ctx);
+  }
+
+  async showContactsMenu(ctx) {
+    const contacts = await contactStore.listContacts(ctx.phone);
+    if (!contacts.length) {
+      await this.reply(
+        ctx.phone,
+        `*📇 No saved contacts yet*\n\n` +
+          `Save someone:\n` +
+          `_*save contact Mama 08012345678*_\n\n` +
+          `Or share their contact card from WhatsApp while ordering airtime.`
+      );
+      return this.showMenu(ctx);
+    }
+
+    const lines = contacts
+      .slice(0, 20)
+      .map((c) => contactStore.formatContactLine(c))
+      .join('\n');
+    await this.reply(
+      ctx.phone,
+      `*📇 Your Mysogi contacts*\n\n${lines}\n\n` +
+        `_Say *buy MTN 500 airtime for Mama* or share a contact when ordering._`
+    );
+    return this.showMenu(ctx);
+  }
+
+  async trySaveContactFromText(ctx, text) {
+    const m = String(text || '').match(/^save\s+contact\s+(.+?)\s+(0\d{10}|234\d{10})\s*$/i);
+    if (!m) return false;
+    const name = m[1].trim();
+    const result = await contactStore.saveContact(ctx.phone, { name, phone: m[2] });
+    if (result.ok) {
+      await this.reply(ctx.phone, `✅ Saved *${result.contact.name}* — ${result.contact.phone}`);
+    } else {
+      await this.reply(ctx.phone, `❌ ${result.message}`);
+    }
+    return true;
+  }
+
+  async showBulkAmountPicker(ctx, bulk) {
+    const count = bulk.recipients.length;
+    const rows = AIRTIME_AMOUNTS.map((amt) => ({
+      id: `bulk_amt_${amt}`,
+      title: formatAmountTitle(amt),
+      description: `${count} × ${wallet.formatNaira(amt)}`,
+    }));
+    rows.push({ id: 'bulk_amt_custom', title: 'Other amount', description: 'Type amount' });
+    await this.list(
+      ctx.phone,
+      `*${bulk.network} — ${count} recipients*\n\nPick airtime *per person*:`,
+      'Amounts',
+      [{ title: 'Per person', rows: rows.slice(0, 10) }]
+    );
+    await this.updateSession(ctx.phone, {
+      step: this.STEPS.PICK_AMOUNT,
+      data: { bulkAirtime: bulk, airtime: { type: 'airtime', network: bulk.network } },
+    });
+  }
+
   async executePurchase(ctx, airtime) {
     const opts = {
       service: 'airtime',
@@ -364,10 +634,33 @@ class AirtimeService extends BaseService {
 
     const { choice, step, data, text } = ctx;
     const airtime = data?.airtime;
+    const bulk = data?.bulkAirtime;
+
+    if (await this.trySaveContactFromText(ctx, text)) return;
+
+    if (ctx.contacts && (step === this.STEPS.BULK_RECIPIENTS || step === this.STEPS.ENTER_PHONE)) {
+      if (step === this.STEPS.ENTER_PHONE && airtime) {
+        const shared = contactStore.parseSharedContacts({ contacts: ctx.contacts });
+        if (shared[0]) {
+          await contactStore.saveContact(ctx.phone, shared[0]);
+          const next = { ...airtime, phone: shared[0].phone };
+          if (isDataFlow(next)) {
+            if (!normalizeDataPeriod(next.dataPeriod || data.dataPeriod)) {
+              return this.showDataPeriodPicker(ctx, { ...next, type: 'data' });
+            }
+            return this.showDataBundles(ctx, { ...next, type: 'data' }, next.dataPeriod || data.dataPeriod, 0);
+          }
+          return this.showAirtimeAmounts(ctx, { ...next, type: 'airtime' });
+        }
+      }
+      return this.addBulkRecipients(ctx, { contacts: ctx.contacts, text: '' });
+    }
 
     // ── Entry points ──
     if (choice === 'airtime_buy') return this.startAirtimeFlow(ctx);
     if (choice === 'airtime_data') return this.startDataFlow(ctx);
+    if (choice === 'airtime_bulk') return this.startBulkFlow(ctx);
+    if (choice === 'airtime_contacts') return this.showContactsMenu(ctx);
 
     // ── Network (must match current flow type) ──
     if (choice?.startsWith('net_')) {
@@ -416,11 +709,63 @@ class AirtimeService extends BaseService {
     }
 
     if (choice === 'air_other' && airtime) {
-      await this.reply(ctx.phone, 'Send the recipient number:\n_e.g. 08012345678_');
+      await this.reply(
+        ctx.phone,
+        'Send the recipient number, a *saved contact name*, or *share their contact card* from WhatsApp:\n_e.g. 08012345678 or Mama_'
+      );
       await this.updateSession(ctx.phone, {
         step: this.STEPS.ENTER_PHONE,
         data: { airtime: { ...airtime, recipientType: 'other' } },
       });
+      return;
+    }
+
+    // ── Bulk airtime ──
+    if (choice === 'bulk_clear' && bulk) {
+      return this.startBulkFlow(ctx);
+    }
+    if (choice === 'bulk_continue' && bulk?.recipients?.length) {
+      await this.showNetworkPicker(ctx, 'airtime');
+      await this.updateSession(ctx.phone, {
+        step: this.STEPS.PICK_NETWORK,
+        data: { bulkAirtime: { ...bulk, type: 'airtime' }, airtime: { type: 'airtime' } },
+      });
+      return;
+    }
+    if (choice === 'bulk_confirm' && bulk) {
+      return this.executeBulkPurchase(ctx, bulk);
+    }
+    if (step === this.STEPS.BULK_RECIPIENTS && bulk && text?.trim()) {
+      return this.addBulkRecipients(ctx, { text, contacts: null });
+    }
+    if (step === this.STEPS.BULK_CONFIRM && bulk && isAffirmation(text)) {
+      return this.executeBulkPurchase(ctx, bulk);
+    }
+
+    if (choice?.startsWith('net_') && bulk?.recipients?.length && !airtime?.phone) {
+      const network = networkFromChoice(choice);
+      if (!network) return this.showMenu(ctx);
+      return this.showBulkAmountPicker(ctx, { ...bulk, network, type: 'airtime' });
+    }
+
+    if (choice?.startsWith('bulk_amt_') && bulk) {
+      if (choice === 'bulk_amt_custom') {
+        await this.reply(ctx.phone, `Enter amount per person (min ${wallet.formatNaira(MIN_AIRTIME_AMOUNT)}):`);
+        await this.updateSession(ctx.phone, { step: this.STEPS.ENTER_AMOUNT, data: { bulkAirtime: bulk } });
+        return;
+      }
+      const amount = Number(choice.replace('bulk_amt_', ''));
+      if (amount >= MIN_AIRTIME_AMOUNT) {
+        return this.showBulkConfirm(ctx, { ...bulk, amount });
+      }
+    }
+
+    if (step === this.STEPS.ENTER_AMOUNT && bulk && isAirtimeFlow({ type: 'airtime' })) {
+      const amount = parseFloat(String(text || '').replace(/[₦,]/g, ''));
+      if (amount >= MIN_AIRTIME_AMOUNT) {
+        return this.showBulkConfirm(ctx, { ...bulk, amount });
+      }
+      await this.reply(ctx.phone, `Minimum ${wallet.formatNaira(MIN_AIRTIME_AMOUNT)} per person.`);
       return;
     }
 
@@ -477,9 +822,25 @@ class AirtimeService extends BaseService {
 
     // ── Text input steps (data first — avoids airtime bleed-through) ──
     if (step === this.STEPS.ENTER_PHONE && airtime) {
-      const phone = toLocalPhone(text);
-      if (phone.length < 11) {
-        await this.reply(ctx.phone, 'Enter a valid Nigerian number (11 digits).');
+      let phone = toLocalPhone(text);
+      if (!phone || phone.length < 11) {
+        const named = await contactStore.resolveContactName(ctx.phone, text.trim());
+        if (named.ok) phone = named.contact.phone;
+        else if (named.ambiguous) {
+          await this.reply(
+            ctx.phone,
+            `Several matches for *${text.trim()}*:\n` +
+              named.matches.map((m) => `• ${m.name} — ${m.phone}`).join('\n') +
+              `\n\nReply with the exact name or number.`
+          );
+          return;
+        } else if (text.trim().length >= 2) {
+          await this.reply(ctx.phone, `${named.message}\n\nOr send their phone number.`);
+          return;
+        }
+      }
+      if (!phone || phone.length < 11) {
+        await this.reply(ctx.phone, 'Enter a valid Nigerian number (11 digits), saved name, or share a contact card.');
         return;
       }
       const next = { ...airtime, phone };
