@@ -1,7 +1,7 @@
 const BaseService = require('../BaseService');
 const chowdeck = require('../../providers/chowdeck');
 const wallet = require('../../wallet/walletService');
-const { confirmAndPay } = require('../../wallet/purchaseHelper');
+const { confirmAndPay, isCheckoutPending } = require('../../wallet/purchaseHelper');
 const {
   paginateItems,
   formatCatalogListRow,
@@ -497,7 +497,7 @@ class FoodService extends BaseService {
       },
     });
 
-    if (purchase?.awaitingPin || purchase?.awaitingPinSetup || purchase?.locked) return;
+    if (isCheckoutPending(purchase)) return;
 
     if (purchase?.ok) {
       await this.reply(
@@ -506,7 +506,7 @@ class FoodService extends BaseService {
           `${purchase.result?.message || ''}\n\n` +
           `Ref: *${purchase.reference}*\n` +
           `Paid: ${wallet.formatNaira(purchase.total)}\n` +
-          `Balance: ${wallet.formatNaira(purchase.balance)}`
+          (purchase.balance != null ? `Balance: ${wallet.formatNaira(purchase.balance)}` : '')
       );
     } else if (!purchase?.prompted && !purchase?.insufficient) {
       await this.reply(ctx.phone, `❌ ${purchase?.message || 'Order could not be completed.'}`);

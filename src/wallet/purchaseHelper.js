@@ -192,7 +192,8 @@ async function confirmAndPayAsGuest(phone, opts) {
     `💳 *Guest checkout*\n\n` +
       `${opts.summaryText}\n\n` +
       `${pricing.text}\n\n` +
-      `Tap below to pay securely with Paystack (card, bank, USSD).`
+      `Tap below to pay securely with Paystack (card, bank, USSD).\n` +
+      `_Your order is sent only after payment succeeds._`
   );
 
   const payment = await guestPurchase.initiateGuestPurchase(phone, {
@@ -216,6 +217,15 @@ async function confirmAndPayAsGuest(phone, opts) {
   return { ok: true, awaitingPayment: true, reference: payment.reference, total: payment.total };
 }
 
+function isCheckoutPending(purchase) {
+  return !!(
+    purchase?.awaitingPayment ||
+    purchase?.awaitingPin ||
+    purchase?.awaitingPinSetup ||
+    purchase?.locked
+  );
+}
+
 async function confirmAndPay(phone, opts) {
   if (isGuest(phone)) {
     return confirmAndPayAsGuest(phone, opts);
@@ -236,5 +246,6 @@ module.exports = {
   confirmAndPay,
   confirmAndPayAsGuest,
   executePendingPurchase,
+  isCheckoutPending,
   wallet,
 };

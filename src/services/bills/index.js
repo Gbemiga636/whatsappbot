@@ -1,6 +1,6 @@
 const BaseService = require('../BaseService');
 const telecom = require('../../providers/telecomProvider');
-const { confirmAndPay, wallet } = require('../../wallet/purchaseHelper');
+const { confirmAndPay, isCheckoutPending, wallet } = require('../../wallet/purchaseHelper');
 const {
   paginateItems,
   formatCatalogListRow,
@@ -194,7 +194,7 @@ class BillsService extends BaseService {
     };
     const purchase = await confirmAndPay(ctx.phone, opts);
 
-    if (purchase?.awaitingPin || purchase?.awaitingPinSetup || purchase?.locked) return;
+    if (isCheckoutPending(purchase)) return;
 
     if (purchase?.ok) {
       const token = purchase.result?.token;
@@ -203,7 +203,8 @@ class BillsService extends BaseService {
         `✅ *Payment successful!*\n\nRef: *${purchase.reference}*\n` +
           (token && token !== 'successful' ? `Token: ${token}\n` : '') +
           `${purchase.result?.message ? `${purchase.result.message}\n` : ''}` +
-          `Paid: ${wallet.formatNaira(purchase.total)}\nBalance: ${wallet.formatNaira(purchase.balance)}`
+          `Paid: ${wallet.formatNaira(purchase.total)}\n` +
+          (purchase.balance != null ? `Balance: ${wallet.formatNaira(purchase.balance)}` : '')
       );
     } else if (!purchase?.prompted && !purchase?.insufficient) {
       const refundNote = purchase?.refunded ? '\n\n_Your wallet was refunded._' : '';

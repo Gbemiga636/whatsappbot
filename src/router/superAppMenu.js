@@ -6,15 +6,16 @@
 const whatsapp = require('../whatsapp');
 const { getSession, setSession } = require('../sessionStore');
 const { getUser, isAuthenticated, isGuest } = require('../userStore');
-const contactHandler = require('../contacts/contactHandler');
 const { getService } = require('./serviceRegistry');
 const wallet = require('../wallet/walletService');
 
 const SUPER_MENU_STEP = 'super_menu';
 
 const MAIN_VTU_ROWS = [
-  { id: 'menu_airtime', title: '💳 Airtime', description: 'MTN, Glo, Airtel, 9mobile' },
+  { id: 'menu_airtime', title: '💳 Airtime', description: 'Top up · by saved name' },
   { id: 'menu_data', title: '📶 Data', description: 'Daily, weekly & monthly bundles' },
+  { id: 'menu_bulk', title: '👥 Bulk airtime', description: 'Same airtime for many people' },
+  { id: 'menu_contacts', title: '📇 Saved contacts', description: 'save contact Name 080…' },
   { id: 'menu_electric', title: '⚡ Electricity', description: 'All discos' },
   { id: 'menu_tv', title: '📺 TV subscription', description: 'DStv, GOtv, StarTimes' },
   { id: 'menu_betting', title: '🎰 Betting', description: 'Fund betting account' },
@@ -43,20 +44,16 @@ function buildMainMenuRows(loggedIn, guest) {
   const rows = [...MAIN_VTU_ROWS];
 
   if (loggedIn) {
-    rows.push({ id: 'auth_logout', title: '🚪 Log out', description: 'Sign out of account' });
     rows.push({ id: 'svc_wallet', title: '💳 My wallet', description: 'Balance & top-up' });
     rows.push({ id: 'svc_ai', title: '🤖 AI assistant', description: 'Ask anything' });
     rows.push({ id: 'svc_more_menu', title: '➕ More services', description: 'Ads, partners & more' });
+    rows.push({ id: 'auth_logout', title: '🚪 Log out', description: 'Sign out of account' });
   } else if (guest) {
     rows.push({ id: 'auth_signup', title: '✨ Create account', description: 'Wallet & saved history' });
     rows.push({ id: 'auth_login', title: '🔐 Log in', description: 'Existing Mysogi account' });
-    rows.push({ id: 'svc_ai', title: '🤖 AI assistant', description: 'Ask anything' });
-    rows.push({ id: 'svc_more_menu', title: '➕ More services', description: 'Browse what\'s available' });
   } else {
     rows.push({ id: 'auth_guest', title: '👤 Continue as guest', description: 'Pay via Paystack at checkout' });
     rows.push({ id: 'auth_login', title: '🔐 Log in', description: 'Email & password' });
-    rows.push({ id: 'auth_signup', title: '✨ Sign up', description: 'Create account' });
-    rows.push({ id: 'svc_ai', title: '🤖 AI assistant', description: 'Ask anything' });
   }
 
   return rows.slice(0, 10);
@@ -80,13 +77,11 @@ async function showSuperAppMenu(phone, options = {}) {
 
   const safeRows = buildMainMenuRows(loggedIn, guest);
 
-  if (loggedIn || guest) {
-    await contactHandler.sendContactsIntro(phone);
-  }
-
   const menuBody =
     `${header}\n\n` +
-    `*Just type your order* — e.g. *MTN 500 airtime for Mama* or *airtime for 080…, 081…*\n\n` +
+    `*Quick order:* MTN 500 airtime for Mama · airtime for 080…, 081…\n\n` +
+    `📇 *Save contacts:* \`save contact Mama 08012345678\`\n` +
+    `👥 *Bulk airtime:* tap *Bulk airtime* below or list names/numbers\n\n` +
     `Or tap a service below.`;
 
   try {

@@ -1,6 +1,6 @@
 const BaseService = require('../BaseService');
 const telecom = require('../../providers/telecomProvider');
-const { confirmAndPay, wallet } = require('../../wallet/purchaseHelper');
+const { confirmAndPay, isCheckoutPending, wallet } = require('../../wallet/purchaseHelper');
 const contactStore = require('../../contacts/contactStore');
 const {
   filterBundlesByPeriod,
@@ -544,7 +544,7 @@ class AirtimeService extends BaseService {
       },
     });
 
-    if (purchase?.awaitingPayment || purchase?.awaitingPin || purchase?.awaitingPinSetup) return;
+    if (isCheckoutPending(purchase)) return;
 
     if (purchase?.ok) {
       await this.reply(
@@ -560,13 +560,7 @@ class AirtimeService extends BaseService {
   async showContactsMenu(ctx) {
     const contacts = await contactStore.listContacts(ctx.phone);
     if (!contacts.length) {
-      await this.reply(
-        ctx.phone,
-        `*📇 No saved contacts yet*\n\n` +
-          `Save someone:\n` +
-          `_*save contact Mama 08012345678*_\n\n` +
-          `Or share their contact card from WhatsApp while ordering airtime.`
-      );
+      await this.reply(ctx.phone, contactStore.contactsHelpText());
       return this.showMenu(ctx);
     }
 
@@ -576,8 +570,9 @@ class AirtimeService extends BaseService {
       .join('\n');
     await this.reply(
       ctx.phone,
-      `*📇 Your Mysogi contacts*\n\n${lines}\n\n` +
-        `_Say *buy MTN 500 airtime for Mama* or share a contact when ordering._`
+      `*📇 Your saved contacts*\n\n${lines}\n\n` +
+        `_Edit: *edit contact Name 080…* · Delete: *delete contact Name*_\n\n` +
+        `_Order: *MTN 500 airtime for Mama*_`
     );
     return this.showMenu(ctx);
   }
@@ -633,7 +628,7 @@ class AirtimeService extends BaseService {
 
     const purchase = await confirmAndPay(ctx.phone, opts);
 
-    if (purchase?.awaitingPin || purchase?.awaitingPinSetup || purchase?.locked) return;
+    if (isCheckoutPending(purchase)) return;
 
     if (purchase?.ok) {
       const note = purchase.result?.pendingWebhook ? '\n_Delivering to the line now…_' : '';
@@ -644,7 +639,7 @@ class AirtimeService extends BaseService {
           `${purchase.result?.message ? `${purchase.result.message}\n\n` : ''}` +
           `Ref: *${purchase.reference}*\n` +
           `Paid: ${wallet.formatNaira(purchase.total)}\n` +
-          `Balance: ${wallet.formatNaira(purchase.balance)}` +
+          (purchase.balance != null ? `Balance: ${wallet.formatNaira(purchase.balance)}\n` : '') +
           note
       );
     } else if (!purchase?.prompted && !purchase?.insufficient) {

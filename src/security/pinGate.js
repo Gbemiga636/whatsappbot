@@ -94,6 +94,7 @@ async function sendPurchaseResult(phone, pending, purchase) {
 
   const airtime = pending.snapshot?.airtime || session.data?.airtime;
   const bill = pending.snapshot?.bill || session.data?.bill;
+  const paidVia = purchase.paymentMethod === 'paystack' ? 'Paystack' : 'wallet';
 
   async function safeSend(text) {
     try {
@@ -158,7 +159,7 @@ async function sendPurchaseResult(phone, pending, purchase) {
         detail +
         `${purchase.result?.message ? `${purchase.result.message}\n\n` : ''}` +
         `Ref: *${purchase.reference}*\n` +
-        `Paid: ${wallet.formatNaira(purchase.total || purchase.amount)}\n` +
+        `Paid: ${wallet.formatNaira(purchase.total || purchase.amount)} via *${paidVia}*\n` +
         (purchase.balance != null ? `Balance: ${wallet.formatNaira(purchase.balance)}` : '') +
         providerNote
     );

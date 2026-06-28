@@ -1,6 +1,6 @@
 const BaseService = require('../BaseService');
 const partnerStore = require('../../stores/partnerStore');
-const { confirmAndPay } = require('../../wallet/purchaseHelper');
+const { confirmAndPay, isCheckoutPending } = require('../../wallet/purchaseHelper');
 const wallet = require('../../wallet/walletService');
 const { formatCatalogListRow } = require('../../utils/vtuCatalog');
 
@@ -148,13 +148,15 @@ class PartnersService extends BaseService {
         execute: async () => ({ ok: true, message: 'Order placed' }),
       });
 
+      if (isCheckoutPending(purchase)) return;
+
       if (purchase.ok) {
         await this.reply(
           ctx.phone,
           `✅ *${service.name}* booked!\n\n` +
             `Ref: *${purchase.reference}*\n` +
             `Paid: ${wallet.formatNaira(purchase.total)} (incl. Mysogi fee)\n` +
-            `Balance: ${wallet.formatNaira(purchase.balance)}\n\n` +
+            (purchase.balance != null ? `Balance: ${wallet.formatNaira(purchase.balance)}\n\n` : '\n') +
             `_${service.business_partners?.business_name} will contact you on WhatsApp._`
         );
       }

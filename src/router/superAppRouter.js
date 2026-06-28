@@ -29,6 +29,8 @@ const contactHandler = require('../contacts/contactHandler');
 const QUICK_VTU_ENTRIES = {
   menu_airtime: { service: 'airtime', entry: 'airtime' },
   menu_data: { service: 'airtime', entry: 'data' },
+  menu_bulk: { service: 'airtime', entry: 'bulk' },
+  menu_contacts: { service: 'airtime', entry: 'contacts' },
   menu_electric: { service: 'bills', entry: 'electric' },
   menu_tv: { service: 'bills', entry: 'tv' },
   menu_betting: { service: 'bills', entry: 'betting' },
@@ -86,6 +88,8 @@ async function routeQuickVtuEntry(phone, choice, ctx) {
 
   if (entry.service === 'airtime') {
     if (entry.entry === 'data') await service.startDataFlow(freshCtx);
+    else if (entry.entry === 'bulk') await service.startBulkFlow(freshCtx);
+    else if (entry.entry === 'contacts') await service.showContactsMenu(freshCtx);
     else await service.startAirtimeFlow(freshCtx);
     return true;
   }
