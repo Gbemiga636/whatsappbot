@@ -93,24 +93,34 @@ async function processWebhookMessages(parsed) {
 
   for (const message of messages) {
     const from = message.from;
+    const messageId = message.id;
 
-    if (message.id && !(await claimMessage(message.id))) {
+    if (messageId && !(await claimMessage(messageId))) {
       continue;
     }
 
-    logger.info('Incoming message', { from, to: displayNumber, messageId: message.id });
-
-    if (message.id) {
-      try {
-        await whatsapp.markAsRead(message.id);
-      } catch (readErr) {
-        logger.warn('markAsRead failed', { message: readErr.message });
-      }
-    }
+    logger.info('Incoming message', { from, to: displayNumber, messageId });
 
     try {
+      if (messageId) {
+        try {
+          await whatsapp.markAsRead(messageId);
+        } catch (readErr) {
+          logger.warn('markAsRead failed', { message: readErr.message });
+        }
+      }
+
       await handleIncomingMessage(from, message);
+
+      if (messageId) {
+        const { markMessageProcessed } = require('./utils/messageDedupe');
+        await markMessageProcessed(messageId);
+      }
     } catch (msgErr) {
+      // Allow Meta retry / next delivery to try again
+      const { releaseProcessing } = require('./utils/messageDedupe');
+      releaseProcessing(messageId);
+
       logger.error('Message handler failed', {
         from,
         message: msgErr.response?.data?.error?.message || msgErr.message,
@@ -144,22 +154,10 @@ app.post('/webhook', async (req, res) => {
       return;
     }
 
-    // Acknowledge Meta immediately to stop retries, then process.
+    // Process BEFORE responding. On Netlify, the function freezes after 200,
+    // so early ACK caused no blue ticks and no replies.
+    await processWebhookMessages(parsed);
     res.sendStatus(200);
-
-    // Prefer Netlify/Lambda waitUntil when available so work finishes after 200.
-    const waitUntil = req.waitUntil || globalThis.waitUntil;
-    const work = processWebhookMessages(parsed).catch((err) => {
-      logger.error('Async webhook processing failed', {
-        message: err.response?.data?.error?.message || err.message,
-      });
-    });
-
-    if (typeof waitUntil === 'function') {
-      waitUntil(work);
-    } else {
-      await work;
-    }
   } catch (err) {
     logger.error('Webhook error', {
       message: err.response?.data?.error?.message || err.message,
