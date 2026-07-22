@@ -65,7 +65,7 @@ async function sendButtons(to, bodyText, buttons) {
   });
 }
 
-/** Opens Mysogi login/signup in the phone browser */
+/** Opens Bygate login/signup in the phone browser */
 async function sendCtaUrl(to, bodyText, displayText, url) {
   return sendRequest({
     messaging_product: 'whatsapp',
@@ -95,7 +95,7 @@ async function sendFlow(to, { flowId, flowToken, cta, header, body, screen, foot
       type: 'flow',
       header: header ? { type: 'text', text: header.slice(0, 60) } : undefined,
       body: { text: (body || 'Complete the secure form.').slice(0, 1024) },
-      footer: footer ? { text: footer.slice(0, 60) } : { text: 'Mysogi' },
+      footer: footer ? { text: footer.slice(0, 60) } : { text: 'Bygate' },
       action: {
         name: 'flow',
         parameters: {

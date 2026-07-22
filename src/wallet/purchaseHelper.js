@@ -1,5 +1,9 @@
 /**
  * Purchase helper — wallet checkout at VTU & bill payments.
+ *
+ * Rules:
+ * - Guests: Paystack only → fulfill after payment webhook (never call VTU before pay).
+ * - Logged-in: sufficient wallet balance AND PIN authorization before provider call.
  */
 
 const whatsapp = require('../whatsapp');
@@ -8,7 +12,8 @@ const pinGate = require('../security/pinGate');
 const guestPurchase = require('./guestPurchase');
 const telecom = require('../providers/telecomProvider');
 const { getSession } = require('../sessionStore');
-const { isGuest } = require('../userStore');
+const { isGuest, isAuthenticated } = require('../userStore');
+const logger = require('../core/logger');
 
 async function sendTopUpPrompt(phone, shortfall, context = '') {
   const amount = Math.max(Math.ceil(shortfall), 100);
@@ -32,14 +37,54 @@ async function sendTopUpPrompt(phone, shortfall, context = '') {
     topUp.paymentUrl
   );
 
-  return { ...topUp, prompted: true };
+  return { ...topUp, prompted: true, insufficient: true, ok: false };
 }
 
-async function executePendingPurchase(phone, pending) {
+/** Pre-check balance without debiting or calling the provider. */
+async function checkWalletAffordability(phone, baseAmount) {
+  const pricing = wallet.calculateWithCommission(baseAmount);
+  const balance = await wallet.refreshWalletFromDb(phone);
+  if (balance < pricing.total) {
+    return {
+      ok: false,
+      insufficient: true,
+      balance,
+      required: pricing.total,
+      shortfall: pricing.total - balance,
+      ...pricing,
+    };
+  }
+  return { ok: true, balance, ...pricing };
+}
+
+async function executePendingPurchase(phone, pending, { pinVerified = false } = {}) {
   if (!pending) return { ok: false, message: 'No pending purchase' };
+
+  if (!pinVerified && pinGate.isPinRequired()) {
+    logger.warn('Blocked purchase without PIN authorization', {
+      phone,
+      service: pending.service,
+      purchaseId: pending.purchaseId,
+    });
+    return { ok: false, message: 'Enter your transaction PIN to authorize this payment.' };
+  }
 
   const session = getSession(phone) || {};
   const { service, baseAmount, summaryText } = pending;
+
+  const afford = await checkWalletAffordability(phone, baseAmount);
+  if (!afford.ok) {
+    const pricing = wallet.formatWalletSummary(baseAmount);
+    await whatsapp.sendText(
+      phone,
+      `💳 *Not enough balance*\n\n` +
+        `${summaryText || service}\n\n` +
+        `${pricing.text}\n\n` +
+        `Your balance: *${wallet.formatNaira(afford.balance)}*\n` +
+        `You need: *${wallet.formatNaira(afford.shortfall)}* more`
+    );
+    return sendTopUpPrompt(phone, afford.shortfall, service);
+  }
 
   let execute;
   const airtime = pending.snapshot?.airtime || session.data?.airtime;
@@ -112,7 +157,7 @@ async function executePendingPurchase(phone, pending) {
           feeId: checkout.feeId,
           source: checkout.source,
           destination: checkout.destination,
-          customer: { name: 'Mysogi Customer', phone },
+          customer: { name: 'Bygate Customer', phone },
           orderReference: orderRef,
           notes: `Food order ${orderRef}`,
         });
@@ -141,6 +186,10 @@ async function executePendingPurchase(phone, pending) {
 }
 
 async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute, notify = true, purchaseId }) {
+  if (typeof execute !== 'function') {
+    return { ok: false, message: 'Invalid purchase — missing provider step.' };
+  }
+
   const purchase = await wallet.purchaseWithWallet(phone, {
     service,
     baseAmount,
@@ -158,7 +207,7 @@ async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute
           `${pricing.text}\n\n` +
           `Your balance: *${wallet.formatNaira(purchase.balance)}*\n` +
           `You need: *${wallet.formatNaira(purchase.shortfall)}* more\n\n` +
-          `_The total includes a small Mysogi service fee._`
+          `_The total includes a small Bygate service fee._`
       );
       return sendTopUpPrompt(phone, purchase.shortfall, service);
     }
@@ -182,8 +231,10 @@ async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute
 }
 
 async function confirmAndPayAsGuest(phone, opts) {
+  // Never call opts.execute here — only after Paystack webhook confirms payment
+  const purchaseId =
+    opts.purchaseId || `GST_${Date.now()}_${require('crypto').randomBytes(4).toString('hex')}`;
   const session = getSession(phone) || {};
-  const purchaseId = opts.purchaseId || `GST_${Date.now()}_${require('crypto').randomBytes(4).toString('hex')}`;
   const snapshot = guestPurchase.buildPendingSnapshot(session);
   const pricing = wallet.formatWalletSummary(opts.baseAmount);
 
@@ -193,28 +244,36 @@ async function confirmAndPayAsGuest(phone, opts) {
       `${opts.summaryText}\n\n` +
       `${pricing.text}\n\n` +
       `Tap below to pay securely with Paystack (card, bank, USSD).\n` +
-      `_Your order is sent only after payment succeeds._`
+      `_Your order is sent only after payment succeeds — not before._`
   );
 
   const payment = await guestPurchase.initiateGuestPurchase(phone, {
-    ...opts,
+    service: opts.service,
+    baseAmount: opts.baseAmount,
+    summaryText: opts.summaryText,
     purchaseId,
     snapshot,
   });
 
   if (!payment.ok) {
     await whatsapp.sendText(phone, `❌ ${payment.message || 'Could not start payment.'}`);
-    return payment;
+    return { ok: false, message: payment.message };
   }
 
   await whatsapp.sendCtaUrl(
     phone,
-    `Pay *${wallet.formatNaira(payment.total)}* — your order is fulfilled automatically after payment.`,
+    `Pay *${wallet.formatNaira(payment.total)}* — fulfilled automatically after Paystack confirms.`,
     'Pay with Paystack',
     payment.paymentUrl
   );
 
-  return { ok: true, awaitingPayment: true, reference: payment.reference, total: payment.total };
+  return {
+    ok: true,
+    awaitingPayment: true,
+    reference: payment.reference,
+    total: payment.total,
+    fulfilled: false,
+  };
 }
 
 function isCheckoutPending(purchase) {
@@ -222,7 +281,8 @@ function isCheckoutPending(purchase) {
     purchase?.awaitingPayment ||
     purchase?.awaitingPin ||
     purchase?.awaitingPinSetup ||
-    purchase?.locked
+    purchase?.locked ||
+    purchase?.fulfilled === false
   );
 }
 
@@ -230,6 +290,27 @@ async function confirmAndPay(phone, opts) {
   if (isGuest(phone)) {
     return confirmAndPayAsGuest(phone, opts);
   }
+
+  if (!isAuthenticated(phone)) {
+    return { ok: false, message: 'Please log in or continue as guest first.' };
+  }
+
+  // Balance first — don't ask for PIN if they can't afford it
+  const afford = await checkWalletAffordability(phone, opts.baseAmount);
+  if (!afford.ok) {
+    const pricing = wallet.formatWalletSummary(opts.baseAmount);
+    await whatsapp.sendText(
+      phone,
+      `💳 *Not enough balance*\n\n` +
+        `${opts.summaryText || opts.service}\n\n` +
+        `${pricing.text}\n\n` +
+        `Your balance: *${wallet.formatNaira(afford.balance)}*\n` +
+        `You need: *${wallet.formatNaira(afford.shortfall)}* more\n\n` +
+        `_Top up your wallet, then confirm again._`
+    );
+    return sendTopUpPrompt(phone, afford.shortfall, opts.service);
+  }
+
   if (pinGate.isPinRequired() && !opts.skipPin) {
     return pinGate.guardPurchase(phone, {
       method: 'wallet',
@@ -238,6 +319,7 @@ async function confirmAndPay(phone, opts) {
       summaryText: opts.summaryText,
     });
   }
+
   return _confirmAndPay(phone, opts);
 }
 
@@ -247,5 +329,6 @@ module.exports = {
   confirmAndPayAsGuest,
   executePendingPurchase,
   isCheckoutPending,
+  checkWalletAffordability,
   wallet,
 };

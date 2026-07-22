@@ -7,7 +7,7 @@ const config = require('../../config');
 class LoansService extends BaseService {
   constructor() {
     super('loans', {
-      name: 'Mysogi Credit',
+      name: 'Bygate Credit',
       emoji: '⚡',
       description: 'Instant credit & BNPL',
       steps: {
@@ -25,7 +25,7 @@ class LoansService extends BaseService {
     const dueDays = config.credit.repaymentDays || 7;
 
     let body =
-      `*⚡ Mysogi Credit*\n` +
+      `*⚡ Bygate Credit*\n` +
       `_Instant credit in chat — beat the telco middlemen._\n\n` +
       `Score: *${profile.score}* · Tier: *${profile.tier}*\n` +
       `Limit: ${wallet.formatNaira(profile.credit_limit)}\n` +
@@ -45,9 +45,9 @@ class LoansService extends BaseService {
     }
     rows.push({ id: 'svc_airtime', title: '📱 Buy airtime', description: 'Pay with credit' });
     rows.push({ id: 'svc_bills', title: '⚡ Pay bills', description: 'Pay with credit' });
-    rows.push({ id: 'credit_how', title: '❓ How it works', description: 'Mysogi vs telco loans' });
+    rows.push({ id: 'credit_how', title: '❓ How it works', description: 'Bygate vs telco loans' });
 
-    await this.list(ctx.phone, body, 'Credit menu', [{ title: 'Mysogi Credit', rows: rows.slice(0, 10) }]);
+    await this.list(ctx.phone, body, 'Credit menu', [{ title: 'Bygate Credit', rows: rows.slice(0, 10) }]);
     await this.updateSession(ctx.phone, { step: this.STEPS.MENU });
   }
 
@@ -84,8 +84,8 @@ class LoansService extends BaseService {
     if (choice === 'credit_how') {
       await this.reply(
         ctx.phone,
-        `*How Mysogi Credit works*\n\n` +
-          `Unlike telco airtime loans (powered by backends like Optasia), Mysogi gives you credit *directly in WhatsApp*.\n\n` +
+        `*How Bygate Credit works*\n\n` +
+          `Unlike telco airtime loans (powered by backends like Optasia), Bygate gives you credit *directly in WhatsApp*.\n\n` +
           `✅ No USSD · No app install\n` +
           `✅ Airtime, data & bills\n` +
           `✅ Score built from *your* wallet & chat activity\n` +

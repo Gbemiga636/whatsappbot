@@ -25,6 +25,7 @@ const wallet = require('../wallet/walletService');
 const transactionPin = require('../security/transactionPin');
 const { normalizePhone } = require('../utils/phone');
 const contactHandler = require('../contacts/contactHandler');
+const reminderHandler = require('../reminders/reminderHandler');
 
 const QUICK_VTU_ENTRIES = {
   menu_airtime: { service: 'airtime', entry: 'airtime' },
@@ -192,6 +193,16 @@ async function handleIncomingMessage(from, message) {
     if (cmdHandled) return;
   }
 
+  if (incoming.text) {
+    const remHandled = await reminderHandler.handleReminderCommand(phone, incoming.text);
+    if (remHandled) return;
+  }
+
+  if (choice === 'menu_reminders') {
+    await reminderHandler.showRemindersMenu(phone);
+    return;
+  }
+
   if (incoming.contacts && !contactHandler.shouldDeferContactToService(session)) {
     const handled = await contactHandler.handleSharedContact(phone, incoming.contacts, session);
     if (handled) return;
@@ -237,6 +248,31 @@ async function handleIncomingMessage(from, message) {
     return showSuperAppMenu(phone);
   }
 
+  // Wallet top-up from main menu (Paystack)
+  if (choice === 'menu_wallet_topup' || choice === 'wallet_topup' || choice === 'wallet_topup_self') {
+    if (!isAuthenticated(phone)) {
+      if (isGuest(phone)) {
+        const whatsapp = require('../whatsapp');
+        await whatsapp.sendText(
+          phone,
+          `💰 *Wallet top-up* needs a Bygate account.\n\n` +
+            `As a guest you pay with Paystack at checkout for each order.\n\n` +
+            `*Sign up* to unlock a wallet you can top up once and reuse.`
+        );
+        return handleAuthAction(phone, 'auth_signup');
+      }
+      return promptLoginRequired(phone);
+    }
+    setSession(phone, { ...session, activeService: 'wallet', step: 'wallet_menu' });
+    const walletSvc = getService('wallet');
+    await walletSvc.reply(phone, 'How much do you want to add to *your* wallet? (min ₦100)\n\n_Pay securely with Paystack._');
+    await walletSvc.updateSession(phone, {
+      step: walletSvc.STEPS.TOPUP_AMOUNT,
+      data: { topupType: 'self', beneficiaryPhone: phone },
+    });
+    return;
+  }
+
   if (QUICK_VTU_ENTRIES[choice] && isSuperMenuStep(session)) {
     const handled = await routeQuickVtuEntry(phone, choice, ctx);
     if (handled) return;
@@ -250,12 +286,15 @@ async function handleIncomingMessage(from, message) {
   }
 
   // Natural language — skip for interactive list/button during active service wizards
+  // Also skip while on auth welcome to avoid re-prompt spam
   const inServiceWizard =
     session.activeService &&
     incoming.listId &&
     ['airtime', 'bills', 'wallet'].includes(session.activeService);
 
-  if (incoming.text && !inServiceWizard) {
+  const onAuthWelcome = session.step === 'auth_welcome';
+
+  if (incoming.text && !inServiceWizard && !onAuthWelcome) {
     const nlCtx = { ...ctx, session, text: incoming.text, incoming };
     try {
       const nlHandled = await tryNaturalLanguageRoute(phone, incoming, nlCtx);

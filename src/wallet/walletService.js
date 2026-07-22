@@ -1,5 +1,5 @@
 /**
- * Mysogi Wallet — balance, top-up, debit with commission.
+ * Bygate Wallet — balance, top-up, debit with commission.
  */
 
 const crypto = require('crypto');
@@ -298,7 +298,7 @@ async function debitWallet(phone, totalAmount, { baseAmount, commission, referen
         amount: commission,
         balanceAfter: newBalance,
         reference,
-        service: 'mysogi',
+        service: 'Bygate',
         metadata: { parentService: service, baseAmount },
       });
     }
@@ -355,7 +355,7 @@ async function initiateTopUp(payerPhone, amount, { beneficiaryPhone, topupType =
   }
 
   const user = getUser(payer);
-  const email = user?.email || `user_${payer}@mysogi.app`;
+  const email = user?.email || `user_${payer}@bygate.app`;
   const reference = generateRef(isGift ? 'GIFT' : 'TOPUP');
 
   const metadata = {
@@ -501,7 +501,7 @@ async function notifyWalletTopUpSuccess({ phone, payerPhone, amount, balance, re
         `🎁 *You received wallet credit!*\n\n` +
           `+${formatNaira(amount)}\n` +
           `New balance: *${formatNaira(balance)}*\n\n` +
-          `Someone topped up your Mysogi wallet.\nType *menu* to start using it.`
+          `Someone topped up your Bygate wallet.\nType *menu* to start using it.`
       );
     } else if (normBeneficiary) {
       let msg =
@@ -719,7 +719,7 @@ function formatWalletSummary(baseAmount) {
   return {
     text:
       `Amount: ${formatNaira(base)}\n` +
-      `Mysogi fee (${rate}%): ${formatNaira(commission)}\n` +
+      `Bygate fee (${rate}%): ${formatNaira(commission)}\n` +
       `*Total: ${formatNaira(total)}*`,
     base,
     commission,

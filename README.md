@@ -1,4 +1,4 @@
-# Mysogi Super App
+# Bygate Super App
 
 **Africa's WhatsApp Super App** — banking, bills, food, shopping, loans, travel, healthcare, education, AI assistant, and Ads Studio. All in one WhatsApp conversation.
 
@@ -30,7 +30,7 @@ Send **Hi** → Super App menu with 15 services:
 | 🍔 Food Delivery | Order from restaurants |
 | 🛒 Shopping | Groceries & e-commerce |
 | 💰 Loans | Personal loans & BNPL |
-| 🎯 Ads Studio | AI ads & campaigns (original Mysogi) |
+| 🎯 Ads Studio | AI ads & campaigns (original Bygate) |
 | ✈️ Travel | Flights, hotels, rides |
 | 🤖 AI Assistant | Personal AI helper |
 | 💼 Business Tools | Invoices, CRM, payments |
@@ -86,7 +86,7 @@ WhatsApp → Webhook → Super App Router → Service Modules → API Providers
 - [Architecture](docs/ARCHITECTURE.md)
 - [API Requirements](docs/API_REQUIREMENTS.md)
 - [Supabase Setup](docs/SUPABASE_SETUP.md)
-- [Mysogi API](docs/MYSOGI_API.md)
+- [Bygate API](docs/Bygate_API.md)
 
 ## Health Check
 
@@ -97,7 +97,7 @@ curl http://localhost:3000/health
 ```json
 {
   "ok": true,
-  "service": "mysogi-super-app",
+  "service": "Bygate-super-app",
   "version": "2.0.0",
   "supabase": true
 }

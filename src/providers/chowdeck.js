@@ -195,11 +195,11 @@ async function createRelayDelivery({ feeId, source, destination, customer, order
     },
     source_address_string: source.address || '',
     destination_address_string: destination.address || '',
-    customer_name: customer.name || 'Mysogi Customer',
+    customer_name: customer.name || 'Bygate Customer',
     customer_phone: customer.phone,
     customer_email: customer.email || undefined,
-    reference: orderReference || `mysogi_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
-    note: notes || 'Order via Mysogi WhatsApp',
+    reference: orderReference || `Bygate_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+    note: notes || 'Order via Bygate WhatsApp',
   };
 
   const data = await apiRequest('post', '/relay/delivery', body);
@@ -210,7 +210,7 @@ async function createRelayDelivery({ feeId, source, destination, customer, order
 }
 
 function buildOrderReference() {
-  return `mysogi_food_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  return `Bygate_food_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 }
 
 module.exports = {

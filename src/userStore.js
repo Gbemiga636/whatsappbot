@@ -100,4 +100,9 @@ function isLinked(phone) {
   return isAuthenticated(phone);
 }
 
-module.exports = { getUser, setUser, isAuthenticated, isGuest, canUseServices, isLinked };
+function getAllUsers() {
+  hydrateCache();
+  return [...cache.values()].filter((u) => u && u.phone);
+}
+
+module.exports = { getUser, setUser, isAuthenticated, isGuest, canUseServices, isLinked, getAllUsers };

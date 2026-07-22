@@ -159,7 +159,7 @@ class BillsService extends BaseService {
         ctx.phone,
         `💳 *Insufficient balance*\n\n` +
           `Amount: ${wallet.formatNaira(afford.base)}\n` +
-          `Mysogi fee: ${wallet.formatNaira(afford.commission)}\n` +
+          `Bygate fee: ${wallet.formatNaira(afford.commission)}\n` +
           `*Total needed: ${wallet.formatNaira(afford.total)}*\n\n` +
           `Your balance: *${wallet.formatNaira(afford.balance)}*\n` +
           `Short by: *${wallet.formatNaira(afford.shortfall)}*`

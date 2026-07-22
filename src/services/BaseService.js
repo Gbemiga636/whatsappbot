@@ -1,5 +1,5 @@
 /**
- * Base class for all Mysogi super-app services.
+ * Base class for all Bygate super-app services.
  */
 
 const whatsapp = require('../whatsapp');

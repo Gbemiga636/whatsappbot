@@ -63,7 +63,7 @@ function fallbackResponse(messages) {
   }
 
   return (
-    `*Mysogi AI Assistant* 🤖\n\nI can help you with:\n` +
+    `*Bygate AI Assistant* 🤖\n\nI can help you with:\n` +
     `• Banking & transfers\n• Airtime & data\n• Bill payments\n• Food & shopping\n• Loans & travel\n• Ads & business tools\n\n` +
     `Type *menu* to see all services, or tell me what you need!\n\n` +
     `_Add OPENAI_API_KEY for full conversational AI._`

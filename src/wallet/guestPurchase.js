@@ -79,7 +79,7 @@ function buildExecute(pending) {
           feeId: checkout.feeId,
           source: checkout.source,
           destination: checkout.destination,
-          customer: { name: 'Mysogi Guest', phone: pending.phone },
+          customer: { name: 'Bygate Guest', phone: pending.phone },
           orderReference: orderRef,
           notes: `Food order ${orderRef}`,
         });
@@ -114,7 +114,7 @@ async function initiateGuestPurchase(phone, opts) {
     snapshot,
   };
 
-  const email = `guest_${normPhone}@mysogi.app`;
+  const email = `guest_${normPhone}@bygate.app`;
   const metadata = {
     type: 'guest_purchase',
     phone: normPhone,
@@ -209,6 +209,14 @@ async function processGuestPurchaseWebhook(reference, paidAmount) {
   const db = getSupabase();
   if (!db) return { ok: false, message: 'Database not configured' };
 
+  // Re-verify with Paystack — never fulfill on trust of webhook body alone
+  const verify = await paystack.verifyPayment(reference);
+  if (!verify.ok) {
+    logger.warn('Guest purchase blocked — Paystack not successful', { reference });
+    return { ok: false, message: 'Payment not confirmed by Paystack' };
+  }
+  const confirmedAmount = Number(verify.amount || paidAmount);
+
   const { data: tx } = await db.from('transactions').select('*').eq('reference', reference).maybeSingle();
   if (!tx) return { ok: false, message: 'Transaction not found' };
   if (tx.metadata?.type !== 'guest_purchase') {
@@ -222,8 +230,8 @@ async function processGuestPurchaseWebhook(reference, paidAmount) {
   }
 
   const expected = Number(tx.metadata?.total || tx.amount);
-  if (paidAmount < expected - 0.01) {
-    logger.warn('Guest purchase underpaid', { reference, paidAmount, expected });
+  if (confirmedAmount < expected - 0.01) {
+    logger.warn('Guest purchase underpaid', { reference, confirmedAmount, expected });
     return { ok: false, message: 'Amount mismatch' };
   }
 

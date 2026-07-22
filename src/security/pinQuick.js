@@ -74,7 +74,7 @@ async function finishSetPin(phone, pin, data) {
 
   if (data.pendingPurchase) {
     const { resumePendingPurchase } = require('./pinGate');
-    await resumePendingPurchase(phone, data.pendingPurchase);
+    await resumePendingPurchase(phone, data.pendingPurchase, { pinVerified: true });
   }
   return true;
 }
@@ -94,7 +94,7 @@ async function finishVerifyPin(phone, pin, data) {
     data: { ...data, pinVerifiedAt: Date.now() },
   });
   const { resumePendingPurchase } = require('./pinGate');
-  await resumePendingPurchase(phone, data.pendingPurchase);
+  await resumePendingPurchase(phone, data.pendingPurchase, { pinVerified: true });
   return true;
 }
 

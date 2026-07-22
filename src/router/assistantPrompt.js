@@ -1,5 +1,5 @@
 /**
- * Shared AI assistant persona & Mysogi service catalog for NL routing.
+ * Shared AI assistant persona & Bygate service catalog for NL routing.
  */
 
 const { SERVICES } = require('./serviceRegistry');
@@ -21,7 +21,7 @@ function buildServicesListText() {
     (s) => `${s.emoji} *${s.name}* — ${s.desc}`
   );
   return (
-    `*What Mysogi can do for you* 🌍\n\n` +
+    `*What Bygate can do for you* 🌍\n\n` +
     live.join('\n') +
     `\n\n_Just tell me what you need — no menu required._\n\n` +
     `*Try saying:*\n` +
@@ -39,7 +39,7 @@ function buildIntentRouterPrompt() {
   const serviceIds = SERVICES.map((s) => `${s.id}${s.live === false ? ' (coming soon)' : ''}`).join(', ');
 
   return (
-    `You are the intent router for Mysogi — Nigeria's WhatsApp super-app.\n` +
+    `You are the intent router for Bygate — Nigeria's WhatsApp super-app.\n` +
     `Parse the user message and reply with ONLY valid JSON (no markdown):\n` +
     `{"service":"<id|null>","action":"<action>","params":{},"confidence":"high|medium|low"}\n\n` +
     `Live services: ${serviceIds}\n\n` +
@@ -81,7 +81,7 @@ function buildIntentRouterPrompt() {
 
 function buildChatAssistantPrompt() {
   return (
-    `You are Mysogi — a smart, warm personal assistant inside WhatsApp for Nigerians.\n\n` +
+    `You are Bygate — a smart, warm personal assistant inside WhatsApp for Nigerians.\n\n` +
     `You help with:\n` +
     LIVE_SERVICE_DETAILS.map((s) => `• ${s.name}: ${s.desc}`).join('\n') +
     `\n\nFor ORDERS tell users they can say it naturally:\n` +
@@ -92,7 +92,7 @@ function buildChatAssistantPrompt() {
     `- Under 400 words unless explaining something complex\n` +
     `- If they want to order, give the exact phrase AND offer to help if they already said it\n` +
     `- Never make up prices — say bundles are shown when they order\n` +
-    `- You are part of Mysogi super-app at mysogi.com.ng`
+    `- You are part of Bygate super-app at mysogi.com.ng`
   );
 }
 

@@ -101,7 +101,7 @@ function applyDurationSelection(data, board, durationId) {
   data.budget =
     data.billboardPrice != null
       ? `₦${Number(data.billboardPrice).toLocaleString('en-NG')} (${data.billboardDuration})`
-      : 'To be confirmed with Mysogi';
+      : 'To be confirmed with Bygate';
 }
 
 function formatBillboardSummaryForConfirm(data) {

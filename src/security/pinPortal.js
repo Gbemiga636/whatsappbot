@@ -46,7 +46,7 @@ async function sendPortalLink(phone, { purpose, pendingPurchase, cta, message })
   try {
     await whatsapp.sendCtaUrl(
       phone,
-      `${message}\n\n_Opens a secure Mysogi page in your browser. Your PIN is never saved in this chat._`,
+      `${message}\n\n_Opens a secure Bygate page in your browser. Your PIN is never saved in this chat._`,
       cta,
       url
     );

@@ -116,7 +116,7 @@ function formatBillboardDetail(b) {
     text += `• Monthly: ${formatNaira(b.pricing.monthly)}\n`;
     if (b.pricing.note) text += `_${b.pricing.note}_\n`;
   } else {
-    text += `_Contact Mysogi for static board pricing._\n`;
+    text += `_Contact Bygate for static board pricing._\n`;
   }
 
   if (b.features?.length) {

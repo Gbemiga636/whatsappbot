@@ -62,20 +62,18 @@ function parseSignupBulk(text) {
 }
 
 async function showAuthWelcome(phone) {
-  await whatsapp.sendText(
+  await whatsapp.sendButtons(
     phone,
-    `*Welcome to Mysogi* 🌍\n\n` +
-      `Africa's WhatsApp Super App — banking, bills, food, shopping, loans, travel, AI & more.\n\n` +
-      `*Create an account*, *log in*, or *continue as guest*.\n` +
-      `_Guests pay securely via Paystack at checkout — no signup needed._\n\n` +
-      `_Your WhatsApp number: +${formatPhone(phone)}_`
+    `*Welcome to Bygate* 🌍\n\n` +
+      `Africa's WhatsApp Super App — airtime, data, bills, food, wallet & more.\n\n` +
+      `*Continue as guest* (Paystack at checkout), *log in*, or *sign up*.\n\n` +
+      `_Your number: +${formatPhone(phone)}_`,
+    [
+      { id: 'auth_guest', title: '👤 Continue as guest' },
+      { id: 'auth_login', title: '🔐 Log in' },
+      { id: 'auth_signup', title: '✨ Sign up' },
+    ]
   );
-
-  await whatsapp.sendButtons(phone, 'How would you like to continue?', [
-    { id: 'auth_guest', title: '👤 Continue as guest' },
-    { id: 'auth_login', title: '🔐 Log in' },
-    { id: 'auth_signup', title: '✨ Sign up' },
-  ]);
 
   return { step: 'auth_welcome', data: { authMode: 'pending' } };
 }
@@ -102,7 +100,7 @@ async function startGuest(phone) {
   await whatsapp.sendText(
     phone,
     `👤 *Guest mode*\n\n` +
-      `Browse and order airtime, data, bills, food & more.\n` +
+      `Browse and order airtime, data, bills, food & more on *Bygate*.\n` +
       `When you pay, we'll send a *Paystack link* (card, bank, USSD).\n\n` +
       `_Create an account anytime to use your wallet & save history._`
   );
@@ -114,7 +112,7 @@ async function startGuest(phone) {
 async function startLogin(phone) {
   await whatsapp.sendText(
     phone,
-    `*Log in to Mysogi*\n\n` +
+    `*Log in to Bygate*\n\n` +
       `Reply with your *email address*.\n\n` +
       `_Or send: email | password (one line)_\n` +
       `_Type *menu* or *cancel* to go back._`
@@ -125,7 +123,7 @@ async function startLogin(phone) {
 async function startSignup(phone) {
   await whatsapp.sendText(
     phone,
-    `*Create your Mysogi account*\n\n` +
+    `*Create your Bygate account*\n\n` +
       `Send all details in *one line* (use *|* or *,* between fields):\n\n` +
       `*Format:*\nFirst name | Last name | Email | Password\n\n` +
       `*Example:*\nAda | Okafor | ada@email.com | mypass123\n\n` +
@@ -168,7 +166,7 @@ async function createSignupAccount(phone, draft) {
   const name = formatName(result.user);
   await whatsapp.sendText(
     phone,
-    `✅ *Account created!*\n\nWelcome to Mysogi, *${name}*! 🎉\n\nYour account works across all services.`
+    `✅ *Account created!*\n\nWelcome to Bygate, *${name}*! 🎉\n\nYour account works across all services.`
   );
   return { step: 'super_menu', data: { authMode: 'authenticated', userEmail: result.user.email } };
 }
@@ -221,7 +219,7 @@ async function completeLogin(phone, email, password, data) {
   }
 
   const name = formatName(result.user);
-  await whatsapp.sendText(phone, `✅ *Welcome back, ${name}!*\n\nYou're logged in to Mysogi.`);
+  await whatsapp.sendText(phone, `✅ *Welcome back, ${name}!*\n\nYou're logged in to Bygate.`);
   return { step: 'super_menu', data: { authMode: 'authenticated', userEmail: result.user.email } };
 }
 
@@ -301,7 +299,7 @@ async function handleOtpCode(phone, text, data) {
     return null;
   }
 
-  await whatsapp.sendText(phone, '✅ *Logged in!* Welcome to Mysogi.');
+  await whatsapp.sendText(phone, '✅ *Logged in!* Welcome to Bygate.');
   return { step: 'super_menu', data: { authMode: 'authenticated' } };
 }
 

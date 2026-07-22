@@ -78,10 +78,7 @@ async function applyAuthStepResult(phone, next) {
 
 async function promptLoginRequired(phone) {
   const normalizedPhone = normalizePhone(phone);
-  await whatsapp.sendText(
-    normalizedPhone,
-    '🔐 *Choose how to continue*\n\nLog in, sign up, or continue as guest to use Mysogi services.'
-  );
+  // Single welcome + buttons (avoid duplicate “choose how to continue” spam)
   const next = await supabaseFlow.showAuthWelcome(normalizedPhone);
   setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
 }
@@ -155,7 +152,7 @@ async function handleAuthSteps(phone, message, session) {
     }
   }
 
-  // Legacy Mysogi OTP fallback
+  // Legacy Bygate OTP fallback
   if (session.step === 'auth_otp_email') {
     const next = await legacyFlow.handleOtpEmail(normalizedPhone, text, data);
     if (next) setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
@@ -232,7 +229,7 @@ async function handleAuthAction(phone, action) {
       const user = getUser(normalizedPhone);
       await whatsapp.sendText(
         normalizedPhone,
-        `*Your Mysogi profile*\n\n` +
+        `*Your Bygate profile*\n\n` +
           `Name: ${[user?.firstName, user?.lastName].filter(Boolean).join(' ') || '—'}\n` +
           `Email: ${user?.email || '—'}\n` +
           `Phone: +${normalizedPhone.replace(/^\+/, '')}\n` +

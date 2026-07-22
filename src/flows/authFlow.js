@@ -43,7 +43,7 @@ async function showWelcomeAuth(to) {
     await whatsapp.sendText(
       to,
       `*Welcome back, ${name}!* 👋\n\n` +
-        `You're signed in to Mysogi.\n` +
+        `You're signed in to Bygate.\n` +
         `_${user.email || 'Your account is linked'}_`
     );
     return showAppMenu(to, {
@@ -56,7 +56,7 @@ async function showWelcomeAuth(to) {
   const website = buildUrl('home', to);
   await whatsapp.sendText(
     to,
-    `*Welcome to Mysogi Ads* 🎯\n\n` +
+    `*Welcome to Bygate Ads* 🎯\n\n` +
       `Advertise. Connect. Convert.\n\n` +
       `🌐 *Visit us:* ${BASE}\n${website}\n\n` +
       `Log in with email OTP or *create an account* right here in chat.\n` +
@@ -68,7 +68,7 @@ async function showWelcomeAuth(to) {
     { id: 'auth_guest', title: 'Continue as guest' },
   ]);
 
-  await whatsapp.sendButtons(to, 'New to Mysogi?', [
+  await whatsapp.sendButtons(to, 'New to Bygate?', [
     { id: 'auth_signup', title: 'Create account' },
   ]);
 
@@ -79,7 +79,7 @@ async function startOtpLogin(to) {
   await whatsapp.sendText(
     to,
     `*Login*\n\n` +
-      `Reply with your Mysogi *email address*.\n\n` +
+      `Reply with your Bygate *email address*.\n\n` +
       `We will send a 6-digit code to that email.\n` +
       `_Type *menu* to cancel._`
   );
@@ -93,7 +93,7 @@ async function openLoginForm(to) {
 async function startSignup(to) {
   await whatsapp.sendText(
     to,
-    `*Create Mysogi account* (one message)\n\n` +
+    `*Create Bygate account* (one message)\n\n` +
       `Send *all details in one line*, separated by *|*\n\n` +
       `*Format:*\n` +
       `First name | Last name | Email | Password | individual OR business | Business name\n\n` +
@@ -329,7 +329,7 @@ async function completeAuth(to, result, data = {}) {
   const name = formatDisplayName(result.user);
   const email = result.user?.email || '';
   const intro = result.message?.includes('created')
-    ? `✅ *Account created & logged in!*\n\nWelcome to Mysogi, *${name}*!`
+    ? `✅ *Account created & logged in!*\n\nWelcome to Bygate, *${name}*!`
     : `✅ *You are logged in!*\n\nWelcome back, *${name}*!`;
   const accountLine = email && name !== email.split('@')[0] ? `\n_${email}_` : '';
   await whatsapp.sendText(to, `${intro}${accountLine}\n\nType *menu* to create your first ad.`);
@@ -347,8 +347,8 @@ async function showAppMenu(to, data = {}) {
   const loggedIn = isAuthenticated(to);
   const authLabel = loggedIn ? formatAuthLabel(user) : 'Guest — log in anytime';
   const menuTitle = loggedIn
-    ? `*Mysogi Ads*\n${authLabel}`
-    : `*Mysogi Ads*\n_${authLabel}_`;
+    ? `*Bygate Ads*\n${authLabel}`
+    : `*Bygate Ads*\n_${authLabel}_`;
 
   const rows = [
     { id: 'create', title: 'Create New Ad', description: 'Start a campaign' },
@@ -365,7 +365,7 @@ async function showAppMenu(to, data = {}) {
     rows.push({ id: 'logout', title: 'Log out', description: 'Switch account' });
   }
 
-  rows.push({ id: 'contact', title: 'Contact Mysogi', description: 'Support' });
+  rows.push({ id: 'contact', title: 'Contact Bygate', description: 'Support' });
 
   await whatsapp.sendList(
     to,

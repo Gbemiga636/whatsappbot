@@ -9,7 +9,7 @@ const logger = require('./core/logger');
 
 if (require.main === module) {
   app.listen(config.port, () => {
-    logger.info('Mysogi Super App started', {
+    logger.info('Bygate Super App started', {
       port: config.port,
       supabase: isSupabaseReady(),
       paystack: !!config.payments.paystack.secretKey,
@@ -21,6 +21,18 @@ if (require.main === module) {
     if (!config.publicBaseUrl) {
       logger.warn('PUBLIC_BASE_URL is missing — PIN portal links and Meta webhooks will not work until set');
     }
+
+    // Local/dev: check reminders every 5 minutes (Netlify uses send-reminders cron)
+    const reminderHandler = require('./reminders/reminderHandler');
+    const tick = async () => {
+      try {
+        await reminderHandler.dispatchDueReminders();
+      } catch (err) {
+        logger.warn('Reminder tick failed', { message: err.message });
+      }
+    };
+    setInterval(tick, 5 * 60 * 1000);
+    setTimeout(tick, 20 * 1000);
   });
 }
 

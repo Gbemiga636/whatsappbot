@@ -1,5 +1,5 @@
 /**
- * Mysogi Credit Service — instant credit in chat (Optasia competitor wedge).
+ * Bygate Credit Service — instant credit in chat (Optasia competitor wedge).
  * Disbursement, repayment, auto-collection on wallet top-up.
  */
 
@@ -34,7 +34,7 @@ async function activateCreditLine(phone) {
     return {
       ok: false,
       message:
-        `Your Mysogi score is *${profile.score}* (need ${minScore}+).\n\n` +
+        `Your Bygate score is *${profile.score}* (need ${minScore}+).\n\n` +
         `Top up your wallet, buy airtime/bills, and repay on time to unlock credit.`,
       profile,
     };
@@ -48,7 +48,7 @@ async function activateCreditLine(phone) {
   return {
     ok: true,
     message:
-      `✅ *Mysogi Credit activated!*\n\n` +
+      `✅ *Bygate Credit activated!*\n\n` +
       `Score: *${profile.score}* (${profile.tier})\n` +
       `Limit: *${wallet.formatNaira(profile.limit)}*\n\n` +
       `Use *Pay with credit* when buying airtime, data, or bills.`,
@@ -70,7 +70,7 @@ async function checkEligibility(phone, amount) {
     return {
       ok: false,
       needsActivation: true,
-      message: 'Activate Mysogi Credit first. Type *credit* or tap Loans in menu.',
+      message: 'Activate Bygate Credit first. Type *credit* or tap Loans in menu.',
       profile,
     };
   }
@@ -170,7 +170,7 @@ async function purchaseWithCredit(phone, { service, baseAmount, metadata = {}, e
       amount: total,
       status: 'completed',
       reference,
-      provider: 'mysogi_credit',
+      provider: 'Bygate_credit',
       metadata: { originalService: service, baseAmount: base, fee, dueAt: dueAt.toISOString() },
     });
   }

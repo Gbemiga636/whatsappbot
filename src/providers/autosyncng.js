@@ -53,7 +53,7 @@ function getPin() {
 }
 
 function buildRef() {
-  return `mysogi${Date.now()}${crypto.randomBytes(3).toString('hex')}`;
+  return `Bygate${Date.now()}${crypto.randomBytes(3).toString('hex')}`;
 }
 
 function normalizeNetworkKey(network) {
@@ -88,7 +88,7 @@ function friendlyFailureMessage(message) {
   if (/no gateway found/i.test(text)) {
     return (
       'This service is not active on our VTU supplier yet (gateway not connected). ' +
-      'Try another service or contact Mysogi support.'
+      'Try another service or contact Bygate support.'
     );
   }
   return text || 'Transaction failed — check AutoSyncNG wallet balance and API PIN';

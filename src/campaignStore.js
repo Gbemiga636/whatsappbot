@@ -52,7 +52,7 @@ function updateCampaign(id, patch) {
 
 function formatCampaignForUser(c) {
   const ref = c.id.slice(0, 8).toUpperCase();
-  const status = c.platformId ? 'live on Mysogi' : c.status || 'created';
+  const status = c.platformId ? 'live on Bygate' : c.status || 'created';
   const lines = [
     `*${c.campaignName || 'Campaign'}*`,
     `Ref: ${ref} · ${status}`,
@@ -74,7 +74,7 @@ function formatCampaignForUser(c) {
 
 function formatCampaignSummary(c) {
   const lines = [
-    `*New Mysogi campaign* (#${c.id.slice(0, 8)})`,
+    `*New Bygate campaign* (#${c.id.slice(0, 8)})`,
     `Type: ${c.adType}`,
     `Name: ${c.campaignName || '—'}`,
     `Contact: ${c.contactName || '—'} | ${c.email || '—'}`,

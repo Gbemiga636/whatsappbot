@@ -46,7 +46,7 @@ function page(title, body) {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <meta name="robots" content="noindex,nofollow"/>
-<title>${esc(title)} · Mysogi Secure PIN</title>
+<title>${esc(title)} · Bygate Secure PIN</title>
 <style>${STYLES}</style>
 </head><body><div class="card">${body}</div></body></html>`;
 }
@@ -112,14 +112,15 @@ async function finishPendingPurchase(phone, tokenPayload) {
   }
 
   const { resumePendingPurchase } = require('../security/pinGate');
-  return resumePendingPurchase(phone, pending);
+  // Caller already verified or set PIN on this secure page
+  return resumePendingPurchase(phone, pending, { pinVerified: true });
 }
 
 function renderSetForm(token, error = '') {
   const err = error ? `<div class="err">${esc(error)}</div>` : '';
   return page(
     'Set PIN',
-    `<span class="badge">🔒 Secure · Mysogi</span>
+    `<span class="badge">🔒 Secure · Bygate</span>
 <h1>Create transaction PIN</h1>
 <p class="lead">Choose a 4-digit PIN for wallet payments. It is encrypted and never appears in your WhatsApp chat.</p>
 ${err}
@@ -137,7 +138,7 @@ function renderVerifyForm(token, summary, error = '') {
     : '';
   return page(
     'Authorize',
-    `<span class="badge">🔒 Secure · Mysogi</span>
+    `<span class="badge">🔒 Secure · Bygate</span>
 <h1>Authorize payment</h1>
 <p class="lead">Enter your transaction PIN to confirm this payment.</p>
 ${box}
@@ -155,7 +156,7 @@ function renderChangeForm(token, error = '') {
   const err = error ? `<div class="err">${esc(error)}</div>` : '';
   return page(
     'Change PIN',
-    `<span class="badge">🔒 Secure · Mysogi</span>
+    `<span class="badge">🔒 Secure · Bygate</span>
 <h1>Change transaction PIN</h1>
 <p class="lead">Update your 4-digit PIN used for payments and transfers.</p>
 ${err}
@@ -188,7 +189,7 @@ router.post('/set', async (req, res) => {
 
   await notifyWhatsApp(
     payload.phone,
-    '✅ *Transaction PIN set!*\n\nFuture payments authorize on the secure Mysogi page — never in chat.'
+    '✅ *Transaction PIN set!*\n\nFuture payments authorize on the secure Bygate page — never in chat.'
   );
 
   const purchase = await finishPendingPurchase(payload.phone, payload);

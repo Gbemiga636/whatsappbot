@@ -10,6 +10,10 @@
 [functions.server]
   timeout = 26
 
+[functions."send-reminders"]
+  schedule = "*/15 * * * *"
+  timeout = 26
+
 [[redirects]]
   from = "/*"
   to = "/.netlify/functions/server"

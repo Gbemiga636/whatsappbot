@@ -41,8 +41,8 @@ async function sendOtpEmail(email, code) {
     await transport.sendMail({
       from,
       to: email,
-      subject: `${code} — your Mysogi login code`,
-      text: `Your Mysogi login code is: ${code}\n\nExpires in ${minutes} minutes.\n\n— Mysogi Ads`,
+      subject: `${code} — your Bygate login code`,
+      text: `Your Bygate login code is: ${code}\n\nExpires in ${minutes} minutes.\n\n— Bygate Ads`,
       html: `<p>Your code: <strong style="font-size:24px">${code}</strong></p><p>Expires in ${minutes} minutes.</p>`,
     });
     return { ok: true };

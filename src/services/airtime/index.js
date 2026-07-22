@@ -2,6 +2,7 @@ const BaseService = require('../BaseService');
 const telecom = require('../../providers/telecomProvider');
 const { confirmAndPay, isCheckoutPending, wallet } = require('../../wallet/purchaseHelper');
 const contactStore = require('../../contacts/contactStore');
+const { detectNetwork, detectNetworkOrNull } = require('../../utils/networkDetect');
 const {
   filterBundlesByPeriod,
   paginateItems,
@@ -88,19 +89,55 @@ class AirtimeService extends BaseService {
   }
 
   async startDataFlow(ctx) {
+    const airtime = { type: 'data' };
     await this.updateSession(ctx.phone, {
-      step: this.STEPS.PICK_NETWORK,
-      data: { airtime: { type: 'data' }, dataPeriod: null, dataBundles: null, dataPage: 0 },
+      step: this.STEPS.PICK_RECIPIENT,
+      data: { airtime, dataPeriod: null, dataBundles: null, dataPage: 0 },
     });
-    return this.showNetworkPicker(ctx, 'data');
+    return this.showRecipientPicker(ctx, airtime);
   }
 
   async startAirtimeFlow(ctx) {
+    const airtime = { type: 'airtime' };
     await this.updateSession(ctx.phone, {
-      step: this.STEPS.PICK_NETWORK,
-      data: { airtime: { type: 'airtime' }, dataPeriod: null, dataBundles: null, dataPage: 0 },
+      step: this.STEPS.PICK_RECIPIENT,
+      data: { airtime, dataPeriod: null, dataBundles: null, dataPage: 0 },
     });
-    return this.showNetworkPicker(ctx, 'airtime');
+    return this.showRecipientPicker(ctx, airtime);
+  }
+
+  /**
+   * Attach auto-detected network from phone. Falls back to network picker if unknown.
+   */
+  async continueWithPhone(ctx, airtime, phone) {
+    const local = toLocalPhone(phone);
+    const detected = detectNetwork(local);
+    const next = {
+      ...airtime,
+      phone: local,
+      network: detected.network || airtime.network || null,
+      networkAuto: !!detected.ok,
+    };
+
+    if (!next.network) {
+      await this.reply(
+        ctx.phone,
+        `📞 ${local}\n\nCouldn't auto-detect the network. Please pick one:`
+      );
+      await this.updateSession(ctx.phone, { data: { airtime: next } });
+      return this.showNetworkPicker(ctx, next.type === 'data' ? 'data' : 'airtime');
+    }
+
+    if (isDataFlow(next)) {
+      if (!normalizeDataPeriod(next.dataPeriod)) {
+        await this.reply(ctx.phone, `📡 ${detected.note} for ${local}`);
+        return this.showDataPeriodPicker(ctx, next);
+      }
+      return this.showDataBundles(ctx, next, next.dataPeriod, 0);
+    }
+
+    await this.reply(ctx.phone, `📡 ${detected.note} for ${local}`);
+    return this.showAirtimeAmounts(ctx, next);
   }
 
   async showNetworkPicker(ctx, type) {
@@ -141,31 +178,30 @@ class AirtimeService extends BaseService {
   async startTelecomForContact(ctx, { type, name, phone }) {
     const localPhone = toLocalPhone(phone);
     const flowType = type === 'data' ? 'data' : 'airtime';
+    const airtime = {
+      type: flowType,
+      phone: localPhone,
+      recipientType: 'other',
+      contactName: name || null,
+    };
     await this.updateSession(ctx.phone, {
-      step: this.STEPS.PICK_NETWORK,
+      step: this.STEPS.PICK_RECIPIENT,
       data: {
-        airtime: {
-          type: flowType,
-          phone: localPhone,
-          recipientType: 'other',
-          contactName: name || null,
-        },
+        airtime,
         dataPeriod: null,
         dataBundles: null,
         dataPage: 0,
       },
     });
-    return this.showNetworkPicker(ctx, flowType);
+    return this.continueWithPhone(ctx, airtime, localPhone);
   }
 
   async showRecipientPicker(ctx, airtime) {
-    const periodNote =
-      isDataFlow(airtime) && airtime.dataPeriod
-        ? `\nDuration: *${periodLabel(airtime.dataPeriod)}*`
-        : '';
+    const label = isDataFlow(airtime) ? 'data' : 'airtime';
+    const net = airtime.network ? `*${airtime.network}* ` : '';
     await this.buttons(
       ctx.phone,
-      `*${airtime.network} ${isDataFlow(airtime) ? 'data' : 'airtime'}*${periodNote}\n\nWho is this for?`,
+      `${net}${label}\n\nWho is this for?\n_Network is detected automatically from the number._`,
       [
         { id: 'air_self', title: 'My number' },
         { id: 'air_other', title: 'Someone else' },
@@ -176,6 +212,10 @@ class AirtimeService extends BaseService {
 
   async showAirtimeAmounts(ctx, airtime) {
     if (!isAirtimeFlow(airtime)) return this.startAirtimeFlow(ctx);
+    if (!airtime.network && airtime.phone) {
+      return this.continueWithPhone(ctx, airtime, airtime.phone);
+    }
+    if (!airtime.network) return this.showNetworkPicker(ctx, 'airtime');
 
     const rows = AIRTIME_AMOUNTS.map((amt) => ({
       id: `air_amt_${amt}`,
@@ -183,10 +223,16 @@ class AirtimeService extends BaseService {
       description: `${airtime.network} → ${airtime.phone}`,
     }));
     rows.push({ id: 'air_amt_custom', title: 'Other amount', description: 'Type any amount' });
+    rows.push({
+      id: 'air_change_network',
+      title: 'Change network',
+      description: airtime.networkAuto ? 'Wrong network? (ported number)' : 'Pick another network',
+    });
 
+    const autoNote = airtime.networkAuto ? ' _(auto-detected)_' : '';
     await this.list(
       ctx.phone,
-      `*${airtime.network} airtime*\n📞 ${airtime.phone}\n\nPick amount:`,
+      `*${airtime.network} airtime*${autoNote}\n📞 ${airtime.phone}\n\nPick amount:`,
       'Amounts',
       [{ title: 'Quick amounts', rows: rows.slice(0, 10) }]
     );
@@ -194,6 +240,9 @@ class AirtimeService extends BaseService {
   }
 
   async showDataPeriodPicker(ctx, airtime) {
+    if (!airtime?.network && airtime?.phone) {
+      return this.continueWithPhone(ctx, { ...airtime, type: 'data' }, airtime.phone);
+    }
     if (!airtime?.network) return this.showNetworkPicker(ctx, 'data');
 
     await this.list(
@@ -320,7 +369,7 @@ class AirtimeService extends BaseService {
         ctx.phone,
         `💳 *Insufficient balance*\n\n` +
           `Plan price: ${wallet.formatNaira(afford.base)}\n` +
-          `Mysogi fee: ${wallet.formatNaira(afford.commission)}\n` +
+          `Bygate fee: ${wallet.formatNaira(afford.commission)}\n` +
           `*Total needed: ${wallet.formatNaira(afford.total)}*\n\n` +
           `Your balance: *${wallet.formatNaira(afford.balance)}*\n` +
           `Short by: *${wallet.formatNaira(afford.shortfall)}*\n\n` +
@@ -672,14 +721,11 @@ class AirtimeService extends BaseService {
         const shared = contactStore.parseSharedContacts({ contacts: ctx.contacts });
         if (shared[0]) {
           await contactStore.saveContact(ctx.phone, shared[0]);
-          const next = { ...airtime, phone: shared[0].phone };
-          if (isDataFlow(next)) {
-            if (!normalizeDataPeriod(next.dataPeriod || data.dataPeriod)) {
-              return this.showDataPeriodPicker(ctx, { ...next, type: 'data' });
-            }
-            return this.showDataBundles(ctx, { ...next, type: 'data' }, next.dataPeriod || data.dataPeriod, 0);
-          }
-          return this.showAirtimeAmounts(ctx, { ...next, type: 'airtime' });
+          return this.continueWithPhone(
+            ctx,
+            { ...airtime, contactName: shared[0].name, recipientType: 'other' },
+            shared[0].phone
+          );
         }
       }
       return this.addBulkRecipients(ctx, { contacts: ctx.contacts, text: '' });
@@ -697,14 +743,28 @@ class AirtimeService extends BaseService {
       if (!network) return this.showMenu(ctx);
 
       if (isDataFlow(airtime) || (step === this.STEPS.PICK_NETWORK && data?.airtime?.type === 'data')) {
-        const next = { type: 'data', network, phone: airtime?.phone, recipientType: airtime?.recipientType, contactName: airtime?.contactName };
+        const next = {
+          type: 'data',
+          network,
+          phone: airtime?.phone,
+          recipientType: airtime?.recipientType,
+          contactName: airtime?.contactName,
+          networkAuto: false,
+        };
         if (next.phone) return this.showDataPeriodPicker(ctx, next);
-        return this.showDataPeriodPicker(ctx, { type: 'data', network });
+        return this.showRecipientPicker(ctx, next);
       }
       if (isAirtimeFlow(airtime) || data?.airtime?.type === 'airtime') {
-        const next = { type: 'airtime', network, phone: airtime?.phone, recipientType: airtime?.recipientType, contactName: airtime?.contactName };
+        const next = {
+          type: 'airtime',
+          network,
+          phone: airtime?.phone,
+          recipientType: airtime?.recipientType,
+          contactName: airtime?.contactName,
+          networkAuto: false,
+        };
         if (next.phone) return this.showAirtimeAmounts(ctx, next);
-        return this.showRecipientPicker(ctx, { type: 'airtime', network });
+        return this.showRecipientPicker(ctx, next);
       }
       return this.showMenu(ctx);
     }
@@ -729,14 +789,13 @@ class AirtimeService extends BaseService {
 
     // ── Recipient ──
     if (choice === 'air_self' && airtime) {
-      if (isDataFlow(airtime)) {
-        const next = { ...airtime, type: 'data', phone: toLocalPhone(ctx.phone), recipientType: 'self' };
-        if (!normalizeDataPeriod(next.dataPeriod)) return this.showDataPeriodPicker(ctx, next);
-        return this.showDataBundles(ctx, next, next.dataPeriod, 0);
-      }
-      if (isAirtimeFlow(airtime)) {
-        const next = { ...airtime, type: 'airtime', phone: toLocalPhone(ctx.phone), recipientType: 'self' };
-        return this.showAirtimeAmounts(ctx, next);
+      const selfPhone = toLocalPhone(ctx.phone);
+      if (isDataFlow(airtime) || isAirtimeFlow(airtime) || airtime?.type) {
+        return this.continueWithPhone(
+          ctx,
+          { ...airtime, type: airtime.type || 'airtime', recipientType: 'self' },
+          selfPhone
+        );
       }
       return this.showMenu(ctx);
     }
@@ -744,7 +803,7 @@ class AirtimeService extends BaseService {
     if (choice === 'air_other' && airtime) {
       await this.reply(
         ctx.phone,
-        'Send the recipient number, a *saved contact name*, or *share their contact card* from WhatsApp:\n_e.g. 08012345678 or Mama_'
+        'Send the recipient number, a *saved contact name*, or *share their contact card* from WhatsApp:\n_e.g. 08012345678 or Mama_\n\n_Network will be detected automatically._'
       );
       await this.updateSession(ctx.phone, {
         step: this.STEPS.ENTER_PHONE,
@@ -753,17 +812,32 @@ class AirtimeService extends BaseService {
       return;
     }
 
+    if (choice === 'air_change_network' && airtime) {
+      return this.showNetworkPicker(ctx, isDataFlow(airtime) ? 'data' : 'airtime');
+    }
+
     // ── Bulk airtime ──
     if (choice === 'bulk_clear' && bulk) {
       return this.startBulkFlow(ctx);
     }
     if (choice === 'bulk_continue' && bulk?.recipients?.length) {
-      await this.showNetworkPicker(ctx, 'airtime');
-      await this.updateSession(ctx.phone, {
-        step: this.STEPS.PICK_NETWORK,
-        data: { bulkAirtime: { ...bulk, type: 'airtime' }, airtime: { type: 'airtime' } },
-      });
-      return;
+      const first = bulk.recipients[0]?.phone;
+      const network = detectNetworkOrNull(first) || bulk.network;
+      if (!network) {
+        await this.reply(ctx.phone, 'Pick the network for this bulk send:');
+        await this.showNetworkPicker(ctx, 'airtime');
+        await this.updateSession(ctx.phone, {
+          step: this.STEPS.PICK_NETWORK,
+          data: { bulkAirtime: { ...bulk, type: 'airtime' }, airtime: { type: 'airtime' } },
+        });
+        return;
+      }
+      const nextBulk = { ...bulk, type: 'airtime', network };
+      await this.reply(
+        ctx.phone,
+        `📡 Detected *${network}* from ${first}.\n_If any number is on another network, send those separately._`
+      );
+      return this.showBulkAmountPicker(ctx, nextBulk);
     }
     if (choice === 'bulk_confirm' && bulk) {
       return this.executeBulkPurchase(ctx, bulk);
@@ -877,17 +951,7 @@ class AirtimeService extends BaseService {
         return;
       }
       const next = { ...airtime, phone };
-      if (isDataFlow(next)) {
-        if (!normalizeDataPeriod(next.dataPeriod || data.dataPeriod)) {
-          return this.showDataPeriodPicker(ctx, { ...next, type: 'data' });
-        }
-        const period = next.dataPeriod || data.dataPeriod;
-        return this.showDataBundles(ctx, { ...next, type: 'data' }, period, 0);
-      }
-      if (isAirtimeFlow(next)) {
-        return this.showAirtimeAmounts(ctx, { ...next, type: 'airtime' });
-      }
-      return this.showMenu(ctx);
+      return this.continueWithPhone(ctx, next, phone);
     }
 
     if (step === this.STEPS.PICK_PERIOD && isDataFlow(airtime)) {

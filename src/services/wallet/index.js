@@ -34,7 +34,7 @@ class WalletService extends BaseService {
     ];
     await this.list(
       ctx.phone,
-      `*💳 My Mysogi Wallet*\n\nBalance: *${wallet.formatNaira(balance)}*\n\n` +
+      `*💳 My Bygate Wallet*\n\nBalance: *${wallet.formatNaira(balance)}*\n\n` +
         `🔒 Transaction PIN: ${pinSet ? 'Active (secure page)' : 'Not set — tap Set PIN'}`,
       'Wallet',
       [{ title: 'Wallet', rows }]

@@ -27,8 +27,8 @@ router.get('/login', (req, res) => {
   const wa = req.query.wa || '';
   res.send(
     page(
-      'Mysogi Login',
-      `<h1>Mysogi Login</h1>
+      'Bygate Login',
+      `<h1>Bygate Login</h1>
 <p>Secure sign-in — password is not saved in WhatsApp chat.</p>
 <form method="post" action="/auth/login">
 <input type="hidden" name="wa" value="${wa}"/>
@@ -71,7 +71,7 @@ router.post('/login', async (req, res) => {
     try {
       await sendText(
         wa,
-        `✅ *You are logged in!*\n\nWelcome, ${result.user.firstName || result.user.email}.\n\nType *menu* to create ads on Mysogi.`
+        `✅ *You are logged in!*\n\nWelcome, ${result.user.firstName || result.user.email}.\n\nType *menu* to create ads on Bygate.`
       );
     } catch {
       // token may be expired on whatsapp side
@@ -92,7 +92,7 @@ router.get('/signup', (req, res) => {
   const wa = req.query.wa || '';
   res.send(
     page(
-      'Mysogi Sign Up',
+      'Bygate Sign Up',
       `<h1>Create account</h1>
 <p>Same account as mysogi.com.ng</p>
 <form method="post" action="/auth/signup">
@@ -156,7 +156,7 @@ router.post('/signup', async (req, res) => {
     page(
       'Account created',
       `<div class="ok"><h2>✓ You are logged in</h2>
-<p>Welcome to Mysogi, <strong>${firstName}</strong>!</p>
+<p>Welcome to Bygate, <strong>${firstName}</strong>!</p>
 <p>Return to WhatsApp and type <strong>menu</strong>.</p></div>`
     )
   );

@@ -125,12 +125,12 @@ async function showMainMenu(to) {
 async function showWallet(to) {
   const user = getUser(to);
   if (!isAuthenticated(to) || !user?.mysogiToken) {
-    await reply(to, 'Log in first to view your Mysogi wallet.\n\nType *login* to continue.');
+    await reply(to, 'Log in first to view your Bygate wallet.\n\nType *login* to continue.');
     return showMainMenu(to);
   }
 
   const balance = await getWalletBalance(user.mysogiToken);
-  let msg = '*Your Mysogi wallet*\n\n';
+  let msg = '*Your Bygate wallet*\n\n';
   if (balance.ok) {
     msg += `Balance: *${balance.formatted}*\n\n`;
   } else {
@@ -141,7 +141,7 @@ async function showWallet(to) {
   await reply(to, msg);
   await whatsapp.sendCtaUrl(
     to,
-    'Manage your wallet and payment history on Mysogi.',
+    'Manage your wallet and payment history on Bygate.',
     'Open wallet',
     buildUrl('wallet', to)
   );
@@ -169,7 +169,7 @@ async function showAdTypeList(to) {
       'Create New Ad to tap into our massive and diverse customer base.\n\n' +
       'Select your ad type:',
     'Select ad type',
-    [{ title: 'Mysogi ad types', rows }]
+    [{ title: 'Bygate ad types', rows }]
   );
 }
 
@@ -205,7 +205,7 @@ async function askContactName(to, data) {
 
 async function askEmail(to, data) {
   setSession(to, { step: STEPS.EMAIL, data });
-  await reply(to, 'Your *email* (used on Mysogi dashboard):');
+  await reply(to, 'Your *email* (used on Bygate dashboard):');
 }
 
 async function askCreative(to, data) {
@@ -256,7 +256,7 @@ async function showConfirmation(to, data) {
   if (!token) {
     await reply(
       to,
-      '⚠️ *Log in first* so this ad is created on your Mysogi account and can use your wallet.\n\n' +
+      '⚠️ *Log in first* so this ad is created on your Bygate account and can use your wallet.\n\n' +
         'Type *login* or tap *Login* from the menu, then create your ad again.'
     );
     setSession(to, { step: STEPS.MAIN_MENU, data });
@@ -289,7 +289,7 @@ async function showConfirmation(to, data) {
     if (cost > 0 && balance.amount < cost) {
       summary += `\n⚠️ Insufficient balance. You'll need to top up before creating this ad.\n`;
     } else if (cost > 0) {
-      summary += `_Payment will be taken from your Mysogi wallet._\n`;
+      summary += `_Payment will be taken from your Bygate wallet._\n`;
     }
   }
 
@@ -304,7 +304,7 @@ async function showConfirmation(to, data) {
   }
   if (data.notes) summary += `Notes: ${data.notes}\n`;
 
-  summary += '\nCreate on Mysogi and pay from wallet?';
+  summary += '\nCreate on Bygate and pay from wallet?';
 
   await whatsapp.sendButtons(to, summary, [
     { id: 'confirm_yes', title: 'Create & pay ✓' },
@@ -352,7 +352,7 @@ async function showMyCampaigns(to) {
     return;
   }
 
-  header += '_All ads created here while logged in appear on your Mysogi dashboard._';
+  header += '_All ads created here while logged in appear on your Bygate dashboard._';
 
   await reply(to, header);
 
@@ -376,12 +376,12 @@ async function promptTopUp(to, data, cost, balanceAmount) {
       `Ad cost: *${formatNaira(cost)}*\n` +
       `Your balance: *${formatNaira(balanceAmount || 0)}*\n` +
       `You need: *${formatNaira(shortfall)}* more\n\n` +
-      `Top up on Mysogi — it's the same wallet as the website.`
+      `Top up on Bygate — it's the same wallet as the website.`
   );
 
   await whatsapp.sendCtaUrl(
     to,
-    'Add funds to your Mysogi wallet, then return here to finish creating your ad.',
+    'Add funds to your Bygate wallet, then return here to finish creating your ad.',
     'Top up wallet',
     buildUrl('topup', to)
   );
@@ -400,7 +400,7 @@ async function submitCampaign(to, data) {
   if (!token) {
     await reply(
       to,
-      '⚠️ Please *log in* so your ad can be created on Mysogi and paid from your wallet.'
+      '⚠️ Please *log in* so your ad can be created on Bygate and paid from your wallet.'
     );
     setSession(to, { step: STEPS.MAIN_MENU, data });
     return showMainMenu(to);
@@ -429,7 +429,7 @@ async function submitCampaign(to, data) {
     if (sync.reason === 'auth_required') {
       await reply(
         to,
-        '⚠️ Your Mysogi session expired. Type *login* to sign in again, then recreate your ad.'
+        '⚠️ Your Bygate session expired. Type *login* to sign in again, then recreate your ad.'
       );
       setUser(to, { mysogiToken: null, authMode: 'guest' });
       clearSession(to);
@@ -446,12 +446,12 @@ async function submitCampaign(to, data) {
     await reply(
       to,
       `⏳ *Campaign saved locally* (ref: *${ref}*)\n\n` +
-        `We couldn't reach Mysogi to create it on the website right now.\n` +
+        `We couldn't reach Bygate to create it on the website right now.\n` +
         `Your details are saved — try again later or create it from the dashboard.`
     );
     await whatsapp.sendCtaUrl(
       to,
-      'Open your Mysogi dashboard to manage campaigns.',
+      'Open your Bygate dashboard to manage campaigns.',
       'Open dashboard',
       buildUrl('dashboard', to)
     );
@@ -473,11 +473,11 @@ async function submitCampaign(to, data) {
     ? `\nCreative: ${data.creatives.length} file(s) attached`
     : '';
   const payNote =
-    cost > 0 ? `\nPaid: *${formatNaira(cost)}* from your Mysogi wallet` : '';
+    cost > 0 ? `\nPaid: *${formatNaira(cost)}* from your Bygate wallet` : '';
 
   await reply(
     to,
-    `✅ *Campaign created on Mysogi!*\n\n` +
+    `✅ *Campaign created on Bygate!*\n\n` +
       `*${data.campaignName}*\n` +
       `Type: ${typeLabel}\n` +
       `Reference: *${ref}*` +
@@ -488,7 +488,7 @@ async function submitCampaign(to, data) {
 
   await whatsapp.sendCtaUrl(
     to,
-    'Your campaign is on your Mysogi account. Open the dashboard to track it.',
+    'Your campaign is on your Bygate account. Open the dashboard to track it.',
     'View on site',
     buildUrl('dashboard', to)
   );
@@ -609,7 +609,7 @@ async function continueFlow(to, session, incoming) {
 
     case STEPS.AUTH_OTP_EMAIL: {
       if (!text?.trim()) {
-        await reply(to, 'Send your Mysogi email address, or type *menu* to cancel.');
+        await reply(to, 'Send your Bygate email address, or type *menu* to cancel.');
         return;
       }
       const next = await handleOtpEmail(to, text, data);
@@ -660,7 +660,7 @@ async function continueFlow(to, session, incoming) {
         const lines = Object.values(AD_TYPES)
           .map((t, i) => `${i + 1}. ${t.label} — ${t.description}`)
           .join('\n');
-        await reply(to, `*Mysogi ad types:*\n\n${lines}\n\nReply *create* or use the menu to start.`);
+        await reply(to, `*Bygate ad types:*\n\n${lines}\n\nReply *create* or use the menu to start.`);
         return;
       }
       if (listId === 'campaigns' || buttonId === 'campaigns') {
@@ -672,7 +672,7 @@ async function continueFlow(to, session, incoming) {
       if (listId === 'dashboard' || buttonId === 'dashboard') {
         await whatsapp.sendCtaUrl(
           to,
-          'Your Mysogi dashboard — same account as WhatsApp.',
+          'Your Bygate dashboard — same account as WhatsApp.',
           'Open dashboard',
           buildUrl('dashboard', to)
         );
@@ -689,7 +689,7 @@ async function continueFlow(to, session, incoming) {
       if (listId === 'contact') {
         await reply(
           to,
-          '*Mysogi Contact*\n9 Adedoyin Ogungbe Crescent, Lekki Phase 1, Lagos\n' +
+          '*Bygate Contact*\n9 Adedoyin Ogungbe Crescent, Lekki Phase 1, Lagos\n' +
             '📞 +234 812 088 9773\n✉️ info@mysogi.com.ng'
         );
         return;
@@ -933,7 +933,7 @@ async function continueFlow(to, session, incoming) {
         await reply(to, 'Campaign cancelled. Type *menu* to start again.');
         return;
       }
-      await reply(to, 'Top up your wallet on Mysogi, then tap *I topped up* — or type *cancel*.');
+      await reply(to, 'Top up your wallet on Bygate, then tap *I topped up* — or type *cancel*.');
       return;
 
     default:

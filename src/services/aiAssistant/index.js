@@ -36,7 +36,7 @@ class AiAssistantService extends BaseService {
       await this.reply(ctx.phone, '⏳ Thinking...');
       const response = await ai.chat({
         messages: [
-          { role: 'system', content: 'You are Mysogi AI, Africa\'s WhatsApp super app assistant. Be helpful, concise, and friendly. You help Nigerians with banking, bills, food, shopping, loans, travel, ads, education, and more. Keep responses under 500 words. Use WhatsApp formatting (*bold*, _italic_).' },
+          { role: 'system', content: 'You are Bygate AI, Africa\'s WhatsApp super app assistant. Be helpful, concise, and friendly. You help Nigerians with banking, bills, food, shopping, loans, travel, ads, education, and more. Keep responses under 500 words. Use WhatsApp formatting (*bold*, _italic_).' },
           ...(data.history || []).slice(-6),
           { role: 'user', content: text },
         ],

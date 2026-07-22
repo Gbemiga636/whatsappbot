@@ -473,7 +473,7 @@ class FoodService extends BaseService {
             source: checkout.source,
             destination: checkout.destination,
             customer: {
-              name: user.firstName || 'Mysogi Customer',
+              name: user.firstName || 'Bygate Customer',
               phone: ctx.phone,
               email: user.email,
             },

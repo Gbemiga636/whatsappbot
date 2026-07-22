@@ -64,9 +64,15 @@ module.exports = {
   },
 
   mysogi: {
-    apiBaseUrl: process.env.MYSOGI_API_BASE_URL || 'https://api.mysogi.com.ng',
-    apiKey: process.env.MYSOGI_API_KEY || '',
-    website: 'https://mysogi.com.ng',
+    apiBaseUrl: process.env.MYSOGI_API_BASE_URL || process.env.BYGATE_API_BASE_URL || 'https://api.mysogi.com.ng',
+    apiKey: process.env.MYSOGI_API_KEY || process.env.BYGATE_API_KEY || '',
+    website: process.env.BYGATE_WEBSITE || process.env.MYSOGI_WEBSITE || 'https://mysogi.com.ng',
+  },
+
+  brand: {
+    name: 'Bygate',
+    tagline: "Africa's WhatsApp Super App",
+    supportEmail: process.env.BYGATE_SUPPORT_EMAIL || 'support@bygate.app',
   },
 
   payments: {

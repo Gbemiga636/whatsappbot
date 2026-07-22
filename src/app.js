@@ -8,6 +8,7 @@ const { handlePaystackWebhook, paystackCallback } = require('./routes/paystackWe
 const { parseWebhookMessage, shouldHandleWebhook } = require('./webhookFilter');
 const { initSupabase, isSupabaseReady } = require('./db/supabase');
 const { hasServiceRoleKey } = require('./auth/supabaseAuth');
+const { claimMessage } = require('./utils/messageDedupe');
 const logger = require('./core/logger');
 
 initSupabase();
@@ -40,7 +41,8 @@ app.use('/pin', securePin);
 app.get('/', (_req, res) => {
   res.json({
     ok: true,
-    service: 'mysogi-super-app',
+    service: 'bygate-super-app',
+    brand: config.brand?.name || 'Bygate',
     hint: 'Use /health or configure Meta webhook at /webhook',
   });
 });
@@ -48,8 +50,9 @@ app.get('/', (_req, res) => {
 app.get('/health', (_req, res) => {
   res.json({
     ok: true,
-    service: 'mysogi-super-app',
-    version: '2.1.0',
+    service: 'bygate-super-app',
+    brand: config.brand?.name || 'Bygate',
+    version: '2.2.0',
     supabase: isSupabaseReady(),
     supabaseServiceRole: hasServiceRoleKey(),
     paystack: !!config.payments.paystack.secretKey,
@@ -85,6 +88,47 @@ app.get('/webhook', (req, res) => {
   return res.sendStatus(403);
 });
 
+async function processWebhookMessages(parsed) {
+  const { messages, displayNumber } = parsed;
+
+  for (const message of messages) {
+    const from = message.from;
+
+    if (message.id && !(await claimMessage(message.id))) {
+      continue;
+    }
+
+    logger.info('Incoming message', { from, to: displayNumber, messageId: message.id });
+
+    if (message.id) {
+      try {
+        await whatsapp.markAsRead(message.id);
+      } catch (readErr) {
+        logger.warn('markAsRead failed', { message: readErr.message });
+      }
+    }
+
+    try {
+      await handleIncomingMessage(from, message);
+    } catch (msgErr) {
+      logger.error('Message handler failed', {
+        from,
+        message: msgErr.response?.data?.error?.message || msgErr.message,
+        code: msgErr.response?.data?.error?.code,
+      });
+      try {
+        const digits = String(from).replace(/\D/g, '');
+        await whatsapp.sendText(
+          digits,
+          '⚠️ *Something went wrong* while processing your message.\n\nType *menu* or *hi* to try again.'
+        );
+      } catch (sendErr) {
+        logger.error('Could not send error reply', { message: sendErr.message });
+      }
+    }
+  }
+}
+
 app.post('/webhook', async (req, res) => {
   try {
     const parsed = parseWebhookMessage(req.body);
@@ -100,41 +144,22 @@ app.post('/webhook', async (req, res) => {
       return;
     }
 
-    const { messages, displayNumber } = parsed;
-
-    for (const message of messages) {
-      const from = message.from;
-      logger.info('Incoming message', { from, to: displayNumber });
-
-      if (message.id) {
-        try {
-          await whatsapp.markAsRead(message.id);
-        } catch (readErr) {
-          logger.warn('markAsRead failed', { message: readErr.message });
-        }
-      }
-
-      try {
-        await handleIncomingMessage(from, message);
-      } catch (msgErr) {
-        logger.error('Message handler failed', {
-          from,
-          message: msgErr.response?.data?.error?.message || msgErr.message,
-          code: msgErr.response?.data?.error?.code,
-        });
-        try {
-          const digits = String(from).replace(/\D/g, '');
-          await whatsapp.sendText(
-            digits,
-            '⚠️ *Something went wrong* while processing your message.\n\nType *menu* or *hi* to try again.'
-          );
-        } catch (sendErr) {
-          logger.error('Could not send error reply', { message: sendErr.message });
-        }
-      }
-    }
-
+    // Acknowledge Meta immediately to stop retries, then process.
     res.sendStatus(200);
+
+    // Prefer Netlify/Lambda waitUntil when available so work finishes after 200.
+    const waitUntil = req.waitUntil || globalThis.waitUntil;
+    const work = processWebhookMessages(parsed).catch((err) => {
+      logger.error('Async webhook processing failed', {
+        message: err.response?.data?.error?.message || err.message,
+      });
+    });
+
+    if (typeof waitUntil === 'function') {
+      waitUntil(work);
+    } else {
+      await work;
+    }
   } catch (err) {
     logger.error('Webhook error', {
       message: err.response?.data?.error?.message || err.message,
@@ -142,7 +167,7 @@ app.post('/webhook', async (req, res) => {
       type: err.response?.data?.error?.type,
       status: err.response?.status,
     });
-    res.sendStatus(200);
+    if (!res.headersSent) res.sendStatus(200);
   }
 });
 

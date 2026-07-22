@@ -231,7 +231,7 @@ async function finishPinEntry(phone, step, pin, data) {
     });
     if (data.pendingPurchase) {
       const { resumePendingPurchase } = require('./pinGate');
-      await resumePendingPurchase(phone, data.pendingPurchase);
+      await resumePendingPurchase(phone, data.pendingPurchase, { pinVerified: true });
     }
     return true;
   }
@@ -250,7 +250,7 @@ async function finishPinEntry(phone, step, pin, data) {
       data: { ...data, pinBuffer: [], pinVerifiedAt: Date.now() },
     });
     const { resumePendingPurchase } = require('./pinGate');
-    await resumePendingPurchase(phone, data.pendingPurchase);
+    await resumePendingPurchase(phone, data.pendingPurchase, { pinVerified: true });
     return true;
   }
 

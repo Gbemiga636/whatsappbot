@@ -11,7 +11,7 @@ class PartnersService extends BaseService {
     super('partners', {
       name: 'Partner Services',
       emoji: '🤝',
-      description: 'Businesses on Mysogi',
+      description: 'Businesses on Bygate',
       steps: {
         MENU: 'menu',
         REGISTER: 'register',
@@ -26,7 +26,7 @@ class PartnersService extends BaseService {
     const services = await partnerStore.getActivePartnerServices(8);
 
     const rows = [
-      { id: 'partner_add', title: '➕ Add your business', description: 'List on Mysogi' },
+      { id: 'partner_add', title: '➕ Add your business', description: 'List on Bygate' },
       { id: 'partner_mine', title: '📋 My businesses', description: 'Manage listings' },
     ];
 
@@ -42,7 +42,7 @@ class PartnersService extends BaseService {
 
     await this.list(
       ctx.phone,
-      `*🤝 Partner Services*\n\nBusinesses offering services on Mysogi. Buy with your wallet balance.`,
+      `*🤝 Partner Services*\n\nBusinesses offering services on Bygate. Buy with your wallet balance.`,
       'Partners',
       [{ title: 'Browse & list', rows: rows.slice(0, 10) }]
     );
@@ -61,7 +61,7 @@ class PartnersService extends BaseService {
     if (choice === 'partner_add') {
       await this.reply(
         ctx.phone,
-        `*Add your business to Mysogi*\n\n` +
+        `*Add your business to Bygate*\n\n` +
           `Send details in *one line* separated by *|*\n\n` +
           `*Format:*\nBusiness name | Category | Description | Service name | Price\n\n` +
           `*Example:*\nAda Beauty | Beauty | Home service salon | Hair styling | 5000\n\n` +
@@ -95,7 +95,7 @@ class PartnersService extends BaseService {
 
       await this.reply(
         ctx.phone,
-        `✅ *${businessName}* is now live on Mysogi!\n\n` +
+        `✅ *${businessName}* is now live on Bygate!\n\n` +
           `Service: ${serviceName} — ${wallet.formatNaira(price)}\n\n` +
           `Customers will see it in *Partner Services* on the main menu.`
       );
@@ -155,7 +155,7 @@ class PartnersService extends BaseService {
           ctx.phone,
           `✅ *${service.name}* booked!\n\n` +
             `Ref: *${purchase.reference}*\n` +
-            `Paid: ${wallet.formatNaira(purchase.total)} (incl. Mysogi fee)\n` +
+            `Paid: ${wallet.formatNaira(purchase.total)} (incl. Bygate fee)\n` +
             (purchase.balance != null ? `Balance: ${wallet.formatNaira(purchase.balance)}\n\n` : '\n') +
             `_${service.business_partners?.business_name} will contact you on WhatsApp._`
         );

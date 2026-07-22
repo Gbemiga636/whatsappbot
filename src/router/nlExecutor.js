@@ -24,6 +24,7 @@ const {
   isGeneralQuestion,
 } = require('./assistantPrompt');
 const contactStore = require('../contacts/contactStore');
+const { detectNetworkOrNull } = require('../utils/networkDetect');
 const {
   createTelecomDraft,
   createBillDraft,
@@ -175,7 +176,7 @@ async function handleAiChat(phone, text, session) {
     if (isServicesQuestion(text)) return replyListServices(phone);
     await whatsapp.sendText(
       phone,
-      `I'm your Mysogi assistant 🤖\n\n${buildServicesListText().split('\n\n').slice(1).join('\n\n')}`
+      `I'm your Bygate assistant 🤖\n\n${buildServicesListText().split('\n\n').slice(1).join('\n\n')}`
     );
     return true;
   }
@@ -297,8 +298,16 @@ async function launchIntoTelecomFlow(phone, partial, ctx) {
     period: partial.period || null,
   };
 
+  if (!airtime.network && airtime.phone) {
+    const detected = detectNetworkOrNull(airtime.phone);
+    if (detected) airtime.network = detected;
+  }
+
   if (!airtime.network) {
-    return airtimeSvc.showNetworkPicker(ctxObj, airtime.type);
+    if (airtime.phone) {
+      return airtimeSvc.continueWithPhone(ctxObj, airtime, airtime.phone);
+    }
+    return airtimeSvc.showRecipientPicker(ctxObj, airtime);
   }
 
   if (airtime.recipientType === 'other' && !airtime.phone) {
@@ -695,7 +704,13 @@ async function _executeNaturalLanguage(phone, intent, ctx) {
   }
 
   if (action === 'greet') {
-    await whatsapp.sendText(phone, `Hello! 👋 I'm your Mysogi assistant.\n\nJust tell me what you need — airtime, data, bills, betting, wallet, and more.\n\n_Type *services* to see everything I can do._`);
+    const { isAuthenticated, isGuest } = require('../userStore');
+    if (!isAuthenticated(phone) && !isGuest(phone)) {
+      const supabaseFlow = require('../flows/supabaseAuthFlow');
+      const next = await supabaseFlow.showAuthWelcome(phone);
+      setSession(phone, { step: next.step, activeService: null, data: next.data });
+      return true;
+    }
     await showSuperAppMenu(phone);
     return true;
   }

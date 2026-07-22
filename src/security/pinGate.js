@@ -30,8 +30,9 @@ async function guardPurchase(phone, pending) {
   };
 
   if (!isPinRequired()) {
+    // Emergency only (PIN_REQUIRED=false) — still go through wallet debit checks
     const { executePendingPurchase } = require('../wallet/purchaseHelper');
-    return executePendingPurchase(phone, pending);
+    return executePendingPurchase(phone, pending, { pinVerified: true });
   }
 
   await transactionPin.ensurePinLoaded(phone);
@@ -54,8 +55,22 @@ async function guardPurchase(phone, pending) {
   return { awaitingPin: true };
 }
 
-async function resumePendingPurchase(phone, pending) {
-  if (!pending) return;
+async function resumePendingPurchase(phone, pending, { pinVerified = false } = {}) {
+  if (!pending) return { ok: false, message: 'No pending purchase' };
+
+  if (!pinVerified) {
+    const logger = require('../core/logger');
+    logger.warn('resumePendingPurchase blocked — PIN not verified', {
+      phone,
+      purchaseId: pending.purchaseId,
+    });
+    const whatsapp = require('../whatsapp');
+    await whatsapp.sendText(
+      phone,
+      '🔒 Enter your transaction PIN to authorize this payment first.'
+    );
+    return { ok: false, message: 'PIN authorization required', awaitingPin: true };
+  }
 
   const { executePendingPurchase } = require('../wallet/purchaseHelper');
   const { setSession, getSession } = require('../sessionStore');
@@ -70,7 +85,7 @@ async function resumePendingPurchase(phone, pending) {
     },
   });
 
-  const purchase = await executePendingPurchase(phone, pending);
+  const purchase = await executePendingPurchase(phone, pending, { pinVerified: true });
   await sendPurchaseResult(phone, pending, purchase);
 
   setSession(phone, {
@@ -89,7 +104,15 @@ async function sendPurchaseResult(phone, pending, purchase) {
   const { getSession } = require('../sessionStore');
   const session = getSession(phone) || {};
 
-  if (purchase?.awaitingPin || purchase?.awaitingPinSetup || purchase?.locked) return;
+  if (
+    purchase?.awaitingPin ||
+    purchase?.awaitingPinSetup ||
+    purchase?.locked ||
+    purchase?.awaitingPayment ||
+    purchase?.fulfilled === false
+  ) {
+    return;
+  }
   if (purchase?.paymentMethod === 'credit') return;
 
   const airtime = pending.snapshot?.airtime || session.data?.airtime;
