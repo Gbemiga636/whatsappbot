@@ -141,7 +141,7 @@ class AirtimeService extends BaseService {
   }
 
   async showNetworkPicker(ctx, type) {
-    const { getSession } = require('../sessionStore');
+    const { getSession } = require('../../sessionStore');
     const current = getSession(ctx.phone) || ctx.session || { data: {} };
     const prevAirtime = current.data?.airtime || {};
     const flowType = type === 'data' ? 'data' : 'airtime';
