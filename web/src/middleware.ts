@@ -5,12 +5,18 @@ import { ADMIN_COOKIE, readAdminToken } from "@/lib/admin/session-token";
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Public admin auth endpoints — never block these
   if (pathname === "/admin/login" || pathname.startsWith("/api/admin/login")) {
     return NextResponse.next();
   }
 
   const token = req.cookies.get(ADMIN_COOKIE)?.value;
-  const session = await readAdminToken(token);
+  let session = null;
+  try {
+    session = await readAdminToken(token);
+  } catch {
+    session = null;
+  }
 
   if (pathname.startsWith("/api/admin/")) {
     if (!session) {

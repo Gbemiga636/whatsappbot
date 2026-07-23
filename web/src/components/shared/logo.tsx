@@ -25,6 +25,7 @@ export function Logo({
           height={36}
           className="h-full w-full object-cover"
           priority
+          unoptimized
         />
       </span>
       {showText && (

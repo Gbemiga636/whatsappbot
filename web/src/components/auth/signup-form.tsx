@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -24,8 +24,15 @@ function strength(password: string) {
 export function SignupForm() {
   const { signup, continueAsGuest } = useAuth();
   const router = useRouter();
-  const params = useSearchParams();
-  const guestMode = params.get("mode") === "guest";
+  const [guestMode, setGuestMode] = useState(false);
+
+  useEffect(() => {
+    try {
+      setGuestMode(new URLSearchParams(window.location.search).get("mode") === "guest");
+    } catch {
+      setGuestMode(false);
+    }
+  }, []);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");

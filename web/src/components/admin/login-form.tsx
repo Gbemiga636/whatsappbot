@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Shield } from "lucide-react";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
@@ -9,11 +9,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+function safeNextPath() {
+  if (typeof window === "undefined") return "/admin";
+  try {
+    const next = new URLSearchParams(window.location.search).get("next");
+    if (next && next.startsWith("/") && !next.startsWith("//")) return next;
+  } catch {
+    /* ignore */
+  }
+  return "/admin";
+}
+
 export function AdminLoginForm() {
   const router = useRouter();
-  const params = useSearchParams();
-  const next = params.get("next") || "/admin";
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
@@ -26,19 +34,24 @@ export function AdminLoginForm() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const res = await fetch("/api/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json().catch(() => ({}));
-    setLoading(false);
-    if (!res.ok || !data.ok) {
-      setError(data.message || "Login failed");
-      return;
+    try {
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        setError(data.message || "Login failed");
+        return;
+      }
+      router.replace(safeNextPath());
+      router.refresh();
+    } catch {
+      setError("Network error — try again");
+    } finally {
+      setLoading(false);
     }
-    router.push(next);
-    router.refresh();
   }
 
   return (

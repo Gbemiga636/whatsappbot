@@ -11,7 +11,8 @@
   # Public site URL for the marketing/dashboard app
   NEXT_PUBLIC_SITE_URL = "https://mysogibot.netlify.app"
 
-# OpenNext adapter — runs the animated Next.js app (landing, dashboard, admin)
+# OpenNext adapter is auto-applied for Next.js on Netlify (do not pin an old v4 plugin).
+# Explicit package keeps the latest runtime without locking a stale version.
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 

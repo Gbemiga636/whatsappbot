@@ -86,6 +86,7 @@ export function Hero() {
               height={900}
               className="h-auto w-full max-w-lg bg-transparent object-contain lg:max-w-none"
               priority
+              unoptimized
               sizes="(max-width: 1024px) 100vw, 560px"
             />
           </motion.div>
