@@ -9,7 +9,7 @@
     "web:dev": "npm --prefix web run dev",
     "web:build": "npm --prefix web run build",
     "web:start": "npm --prefix web run start",
-    "build": "npm install --prefix web && npm run build --prefix web",
+    "build": "cd web && npm install && npm run build",
     "test": "node scripts/test-local.js",
     "test:supabase": "node scripts/test-supabase.js",
     "test:vtpass": "node scripts/test-vtpass.js",

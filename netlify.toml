@@ -1,7 +1,7 @@
 # Bygate on Netlify — Next.js site (web/) + WhatsApp bot (Express function)
 
 [build]
-  command = "npm install && npm install --prefix web && npm run build --prefix web"
+  command = "npm install && cd web && npm install && npm run build"
   publish = "web/.next"
   functions = "netlify/functions"
 
