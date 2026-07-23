@@ -117,7 +117,12 @@ async function sendPurchaseResult(phone, pending, purchase) {
 
   const airtime = pending.snapshot?.airtime || session.data?.airtime;
   const bill = pending.snapshot?.bill || session.data?.bill;
-  const paidVia = purchase.paymentMethod === 'paystack' ? 'Paystack' : 'wallet';
+  const paidVia =
+    purchase.paymentMethod === 'paystack'
+      ? 'Paystack'
+      : purchase.paymentMethod === 'opay'
+        ? 'OPay'
+        : 'wallet';
 
   async function safeSend(text) {
     try {

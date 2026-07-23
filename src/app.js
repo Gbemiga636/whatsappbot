@@ -5,6 +5,7 @@ const { handleIncomingMessage } = require('./router/superAppRouter');
 const secureAuth = require('./routes/secureAuth');
 const securePin = require('./routes/securePin');
 const { handlePaystackWebhook, paystackCallback } = require('./routes/paystackWebhook');
+const { handleOpayWebhook, opayCallback } = require('./routes/opayWebhook');
 const { parseWebhookMessage, shouldHandleWebhook } = require('./webhookFilter');
 const { initSupabase, isSupabaseReady } = require('./db/supabase');
 const { hasServiceRoleKey } = require('./auth/supabaseAuth');
@@ -33,6 +34,10 @@ app.post(
 
 app.get('/webhook/paystack/callback', paystackCallback);
 
+app.post('/webhook/opay', express.json(), handleOpayWebhook);
+app.get('/webhook/opay/callback', opayCallback);
+app.post('/webhook/opay/callback', express.json(), opayCallback);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/auth', secureAuth);
@@ -56,6 +61,11 @@ app.get('/health', (_req, res) => {
     supabase: isSupabaseReady(),
     supabaseServiceRole: hasServiceRoleKey(),
     paystack: !!config.payments.paystack.secretKey,
+    opay: !!(
+      config.payments.opay?.merchantId &&
+      config.payments.opay?.publicKey &&
+      config.payments.opay?.secretKey
+    ),
     billsProvider: config.bills.provider,
     clubKonnect: !!(config.bills.clubkonnect.userId && config.bills.clubkonnect.apiKey),
     autoSyncNg: !!config.bills.autosyncng.apiKey,

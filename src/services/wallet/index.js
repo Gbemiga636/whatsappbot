@@ -165,43 +165,33 @@ class WalletService extends BaseService {
   async processTopUp(payerPhone, amount, { topupType = 'self', beneficiaryPhone } = {}) {
     const isGift = topupType === 'gift';
     const beneficiary = wallet.normalizePhone(beneficiaryPhone || payerPhone);
-
-    const result = await wallet.initiateTopUp(payerPhone, amount, {
-      beneficiaryPhone: beneficiary,
-      topupType: isGift ? 'gift' : 'self',
-    });
-
-    if (!result.ok) {
-      await this.reply(payerPhone, `❌ ${result.message}`);
-      return this.showMenu({ phone: payerPhone, step: this.STEPS.MENU, data: {} });
-    }
-
-    const whatsapp = require('../../whatsapp');
+    const paymentChooser = require('../../wallet/paymentChooser');
 
     if (isGift) {
       await this.reply(
         payerPhone,
         `*Gift top-up ${wallet.formatNaira(amount)}*\n\n` +
           `To: *${wallet.formatPhoneDisplay(beneficiary)}*\n\n` +
-          `Tap below to pay with Paystack.\nTheir wallet updates automatically after payment.`
+          `Choose Paystack or OPay — their wallet updates after payment.`
       );
     } else {
       await this.reply(
         payerPhone,
-        `*Top up ${wallet.formatNaira(amount)}*\n\nTap below to pay with Paystack.\nYour wallet updates automatically after payment.\n\n_If you don't get a confirmation, send any message here after paying._`
+        `*Top up ${wallet.formatNaira(amount)}*\n\n` +
+          `Choose Paystack or OPay.\nYour wallet updates automatically after payment.`
       );
     }
 
-    await whatsapp.sendCtaUrl(
-      payerPhone,
-      `Pay ${wallet.formatNaira(amount)} — card, bank transfer, or USSD.`,
-      'Pay now',
-      result.paymentUrl
-    );
+    await paymentChooser.offerPaymentMethods(payerPhone, {
+      kind: 'wallet_topup',
+      amount,
+      topupType: isGift ? 'gift' : 'self',
+      beneficiaryPhone: beneficiary,
+    });
 
     await this.updateSession(payerPhone, {
       step: this.STEPS.MENU,
-      data: { pendingTopUp: result.reference, topupType, beneficiaryPhone: beneficiary },
+      data: { topupType, beneficiaryPhone: beneficiary },
     });
   }
 }

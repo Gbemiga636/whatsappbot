@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
+    "web:dev": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run build",
+    "web:start": "npm --prefix web run start",
     "test": "node scripts/test-local.js",
     "test:supabase": "node scripts/test-supabase.js",
     "test:vtpass": "node scripts/test-vtpass.js",

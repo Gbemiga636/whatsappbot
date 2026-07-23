@@ -17,27 +17,23 @@ const logger = require('../core/logger');
 
 async function sendTopUpPrompt(phone, shortfall, context = '') {
   const amount = Math.max(Math.ceil(shortfall), 100);
-  const topUp = await wallet.initiateTopUp(phone, amount);
+  const paymentChooser = require('./paymentChooser');
 
-  if (!topUp.ok) {
-    await whatsapp.sendText(phone, `⚠️ ${topUp.message}\n\nType *wallet* to top up manually.`);
-    return topUp;
-  }
-
-  const msg =
-    `💳 *Insufficient balance*\n\n` +
-    `You need ${wallet.formatNaira(amount)} more${context ? ` for ${context}` : ''}.\n\n` +
-    `Tap below to top up via Paystack (card, bank, USSD).`;
-
-  await whatsapp.sendText(phone, msg);
-  await whatsapp.sendCtaUrl(
+  await whatsapp.sendText(
     phone,
-    `Pay ${wallet.formatNaira(topUp.amount)} — balance updates automatically after payment.`,
-    'Top up now',
-    topUp.paymentUrl
+    `💳 *Insufficient balance*\n\n` +
+      `You need ${wallet.formatNaira(amount)} more${context ? ` for ${context}` : ''}.\n\n` +
+      `Choose Paystack or OPay to top up.`
   );
 
-  return { ...topUp, prompted: true, insufficient: true, ok: false };
+  const offered = await paymentChooser.offerPaymentMethods(phone, {
+    kind: 'wallet_topup',
+    amount,
+    topupType: 'self',
+    beneficiaryPhone: phone,
+  });
+
+  return { ...offered, prompted: true, insufficient: true, ok: false };
 }
 
 /** Pre-check balance without debiting or calling the provider. */
@@ -231,9 +227,9 @@ async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute
 }
 
 async function confirmAndPayAsGuest(phone, opts) {
-  // Never call opts.execute here — only after Paystack webhook confirms payment
-  const purchaseId =
-    opts.purchaseId || `GST_${Date.now()}_${require('crypto').randomBytes(4).toString('hex')}`;
+  // Never call opts.execute here — only after payment webhook confirms
+  const paymentChooser = require('./paymentChooser');
+  const purchaseId = opts.purchaseId || paymentChooser.newPurchaseId();
   const session = getSession(phone) || {};
   const snapshot = guestPurchase.buildPendingSnapshot(session);
   const pricing = wallet.formatWalletSummary(opts.baseAmount);
@@ -243,11 +239,11 @@ async function confirmAndPayAsGuest(phone, opts) {
     `💳 *Guest checkout*\n\n` +
       `${opts.summaryText}\n\n` +
       `${pricing.text}\n\n` +
-      `Tap below to pay securely with Paystack (card, bank, USSD).\n` +
-      `_Your order is sent only after payment succeeds — not before._`
+      `Pick *Paystack* or *OPay* — your order is sent only after payment succeeds.`
   );
 
-  const payment = await guestPurchase.initiateGuestPurchase(phone, {
+  const offered = await paymentChooser.offerPaymentMethods(phone, {
+    kind: 'guest_purchase',
     service: opts.service,
     baseAmount: opts.baseAmount,
     summaryText: opts.summaryText,
@@ -255,24 +251,14 @@ async function confirmAndPayAsGuest(phone, opts) {
     snapshot,
   });
 
-  if (!payment.ok) {
-    await whatsapp.sendText(phone, `❌ ${payment.message || 'Could not start payment.'}`);
-    return { ok: false, message: payment.message };
-  }
-
-  await whatsapp.sendCtaUrl(
-    phone,
-    `Pay *${wallet.formatNaira(payment.total)}* — fulfilled automatically after Paystack confirms.`,
-    'Pay with Paystack',
-    payment.paymentUrl
-  );
-
   return {
     ok: true,
     awaitingPayment: true,
-    reference: payment.reference,
-    total: payment.total,
+    awaitingPaymentMethod: true,
+    reference: purchaseId,
+    total: pricing.total,
     fulfilled: false,
+    ...offered,
   };
 }
 

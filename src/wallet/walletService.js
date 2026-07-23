@@ -340,7 +340,7 @@ async function ensureWalletUser(phone) {
   }
 }
 
-async function initiateTopUp(payerPhone, amount, { beneficiaryPhone, topupType = 'self' } = {}) {
+async function initiateTopUp(payerPhone, amount, { beneficiaryPhone, topupType = 'self', provider = 'paystack' } = {}) {
   const topUpAmount = Number(amount);
   if (!topUpAmount || topUpAmount < 100) {
     return { ok: false, message: 'Minimum top-up is ₦100' };
@@ -349,6 +349,7 @@ async function initiateTopUp(payerPhone, amount, { beneficiaryPhone, topupType =
   const payer = normalizePhone(payerPhone);
   const beneficiary = normalizePhone(beneficiaryPhone || payerPhone);
   const isGift = topupType === 'gift' && beneficiary !== payer;
+  const paymentProvider = provider === 'opay' ? 'opay' : 'paystack';
 
   if (isGift) {
     await ensureWalletUser(beneficiary);
@@ -364,6 +365,7 @@ async function initiateTopUp(payerPhone, amount, { beneficiaryPhone, topupType =
     type: 'wallet_topup',
     topup_type: isGift ? 'gift' : 'self',
     amount: topUpAmount,
+    paymentProvider,
   };
 
   const db = getSupabase();
@@ -375,22 +377,36 @@ async function initiateTopUp(payerPhone, amount, { beneficiaryPhone, topupType =
       amount: topUpAmount,
       status: 'pending',
       reference,
-      provider: 'paystack',
+      provider: paymentProvider,
       metadata,
     });
   }
 
-  const callbackUrl = config.publicBaseUrl
-    ? `${config.publicBaseUrl}/webhook/paystack/callback`
-    : undefined;
-
-  const payment = await paystack.initializePayment({
-    email,
-    amount: topUpAmount,
-    reference,
-    metadata,
-    callbackUrl,
-  });
+  let payment;
+  if (paymentProvider === 'opay') {
+    const opay = require('../providers/opay');
+    payment = await opay.initializePayment({
+      email,
+      phone: payer,
+      amount: topUpAmount,
+      reference,
+      productName: isGift ? 'Bygate gift wallet top-up' : 'Bygate wallet top-up',
+      productDescription: `Top up ₦${topUpAmount}`,
+      callbackUrl: config.publicBaseUrl ? `${config.publicBaseUrl}/webhook/opay` : undefined,
+      returnUrl: config.publicBaseUrl ? `${config.publicBaseUrl}/webhook/opay/callback` : undefined,
+    });
+  } else {
+    const callbackUrl = config.publicBaseUrl
+      ? `${config.publicBaseUrl}/webhook/paystack/callback`
+      : undefined;
+    payment = await paystack.initializePayment({
+      email,
+      amount: topUpAmount,
+      reference,
+      metadata,
+      callbackUrl,
+    });
+  }
 
   if (!payment.ok) {
     return { ok: false, message: payment.message };
@@ -404,6 +420,7 @@ async function initiateTopUp(payerPhone, amount, { beneficiaryPhone, topupType =
     beneficiary,
     payer,
     isGift,
+    provider: paymentProvider,
   };
 }
 
@@ -522,14 +539,28 @@ async function notifyWalletTopUpSuccess({ phone, payerPhone, amount, balance, re
   }
 }
 
-/** Fallback when Paystack webhook credited wallet but WhatsApp notify was missed */
+/** Fallback when payment webhook credited wallet but WhatsApp notify was missed */
 async function tryCompletePendingTopUp(phone) {
   const { getSession, setSession } = require('../sessionStore');
   const session = getSession(phone) || {};
   const reference = session.data?.pendingTopUp;
   if (!reference) return false;
 
-  const verify = await paystack.verifyPayment(reference);
+  const db = getSupabase();
+  let provider = 'paystack';
+  if (db) {
+    const { data: tx } = await db
+      .from('transactions')
+      .select('provider, metadata')
+      .eq('reference', reference)
+      .maybeSingle();
+    provider = tx?.provider || tx?.metadata?.paymentProvider || 'paystack';
+  }
+
+  const verify =
+    provider === 'opay'
+      ? await require('../providers/opay').verifyPayment(reference)
+      : await paystack.verifyPayment(reference);
   if (!verify.ok) return false;
 
   const result = await processTopUpWebhook(reference, verify.amount);

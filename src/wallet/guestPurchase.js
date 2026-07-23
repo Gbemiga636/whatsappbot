@@ -103,9 +103,10 @@ async function initiateGuestPurchase(phone, opts) {
   const purchaseId = opts.purchaseId || `GST_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
   const snapshot = opts.snapshot || buildPendingSnapshot(session);
   const { base, commission, total } = wallet.calculateWithCommission(opts.baseAmount);
+  const provider = opts.provider === 'opay' ? 'opay' : 'paystack';
 
   const pending = {
-    method: 'paystack',
+    method: provider,
     phone: normPhone,
     service: opts.service,
     baseAmount: opts.baseAmount,
@@ -125,34 +126,55 @@ async function initiateGuestPurchase(phone, opts) {
     summaryText: opts.summaryText,
     snapshot,
     purchaseId,
+    paymentProvider: provider,
   };
 
   const db = getSupabase();
   if (db) {
     await wallet.ensureWalletUser(normPhone);
-    const { error: insertErr } = await db.from('transactions').insert({
+    await db.from('transactions').insert({
       phone: normPhone,
       service: opts.service,
       type: 'guest_purchase',
       amount: total,
       status: 'pending',
       reference: purchaseId,
-      provider: 'paystack',
+      provider,
       metadata,
     });
   }
 
-  const callbackUrl = config.publicBaseUrl
-    ? `${config.publicBaseUrl}/webhook/paystack/callback`
-    : undefined;
-
-  const payment = await paystack.initializePayment({
-    email,
-    amount: total,
-    reference: purchaseId,
-    metadata,
-    callbackUrl,
-  });
+  let payment;
+  if (provider === 'opay') {
+    const opay = require('../providers/opay');
+    const callbackUrl = config.publicBaseUrl
+      ? `${config.publicBaseUrl}/webhook/opay`
+      : undefined;
+    const returnUrl = config.publicBaseUrl
+      ? `${config.publicBaseUrl}/webhook/opay/callback`
+      : undefined;
+    payment = await opay.initializePayment({
+      email,
+      phone: normPhone,
+      amount: total,
+      reference: purchaseId,
+      productName: opts.summaryText || 'Bygate purchase',
+      productDescription: `Guest ${opts.service || 'order'}`,
+      callbackUrl,
+      returnUrl,
+    });
+  } else {
+    const callbackUrl = config.publicBaseUrl
+      ? `${config.publicBaseUrl}/webhook/paystack/callback`
+      : undefined;
+    payment = await paystack.initializePayment({
+      email,
+      amount: total,
+      reference: purchaseId,
+      metadata,
+      callbackUrl,
+    });
+  }
 
   if (!payment.ok) {
     return { ok: false, message: payment.message };
@@ -171,6 +193,7 @@ async function initiateGuestPurchase(phone, opts) {
     base,
     commission,
     pending,
+    provider,
   };
 }
 
@@ -205,23 +228,36 @@ async function fulfillGuestPurchase(pending) {
   };
 }
 
-async function processGuestPurchaseWebhook(reference, paidAmount) {
+async function processGuestPurchaseWebhook(reference, paidAmount, { provider } = {}) {
   const db = getSupabase();
   if (!db) return { ok: false, message: 'Database not configured' };
-
-  // Re-verify with Paystack — never fulfill on trust of webhook body alone
-  const verify = await paystack.verifyPayment(reference);
-  if (!verify.ok) {
-    logger.warn('Guest purchase blocked — Paystack not successful', { reference });
-    return { ok: false, message: 'Payment not confirmed by Paystack' };
-  }
-  const confirmedAmount = Number(verify.amount || paidAmount);
 
   const { data: tx } = await db.from('transactions').select('*').eq('reference', reference).maybeSingle();
   if (!tx) return { ok: false, message: 'Transaction not found' };
   if (tx.metadata?.type !== 'guest_purchase') {
     return { ok: false, message: 'Not a guest purchase' };
   }
+
+  const paymentProvider = provider || tx.provider || tx.metadata?.paymentProvider || 'paystack';
+
+  // Re-verify with the payment provider — never fulfill on trust of webhook body alone
+  let verify;
+  if (paymentProvider === 'opay') {
+    const opay = require('../providers/opay');
+    verify = await opay.verifyPayment(reference);
+    if (!verify.ok) {
+      logger.warn('Guest purchase blocked — OPay not successful', { reference });
+      return { ok: false, message: 'Payment not confirmed by OPay' };
+    }
+  } else {
+    verify = await paystack.verifyPayment(reference);
+    if (!verify.ok) {
+      logger.warn('Guest purchase blocked — Paystack not successful', { reference });
+      return { ok: false, message: 'Payment not confirmed by Paystack' };
+    }
+  }
+  const confirmedAmount = Number(verify.amount || paidAmount);
+
   if (tx.status === 'completed') {
     return { ok: true, alreadyProcessed: true, phone: tx.phone };
   }
@@ -245,6 +281,7 @@ async function processGuestPurchaseWebhook(reference, paidAmount) {
   };
 
   const purchase = await fulfillGuestPurchase(pending);
+  if (purchase.ok) purchase.paymentMethod = paymentProvider;
 
   if (!purchase.ok) {
     await db
@@ -308,10 +345,20 @@ async function tryCompletePendingGuestPurchase(phone) {
   const reference = session.data?.pendingGuestPurchase;
   if (!reference) return false;
 
-  const verify = await paystack.verifyPayment(reference);
+  const db = getSupabase();
+  let provider = 'paystack';
+  if (db) {
+    const { data: tx } = await db.from('transactions').select('provider, metadata').eq('reference', reference).maybeSingle();
+    provider = tx?.provider || tx?.metadata?.paymentProvider || 'paystack';
+  }
+
+  const verify =
+    provider === 'opay'
+      ? await require('../providers/opay').verifyPayment(reference)
+      : await paystack.verifyPayment(reference);
   if (!verify.ok) return false;
 
-  const result = await processGuestPurchaseWebhook(reference, verify.amount);
+  const result = await processGuestPurchaseWebhook(reference, verify.amount, { provider });
   if (!result.ok || !result.phone) return false;
 
   const alreadyNotified = await wasGuestPurchaseNotified(reference);

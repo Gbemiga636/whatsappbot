@@ -80,6 +80,13 @@ module.exports = {
       secretKey: (process.env.PAYSTACK_SECRET_KEY || '').trim(),
       publicKey: (process.env.PAYSTACK_PUBLIC_KEY || '').trim(),
     },
+    opay: {
+      merchantId: (process.env.OPAY_MERCHANT_ID || '').trim(),
+      publicKey: (process.env.OPAY_PUBLIC_KEY || '').trim(),
+      secretKey: (process.env.OPAY_SECRET_KEY || '').trim(),
+      /** default true = testapi; set OPAY_SANDBOX=false for live */
+      sandbox: process.env.OPAY_SANDBOX !== 'false',
+    },
     flutterwave: {
       secretKey: (process.env.FLUTTERWAVE_SECRET_KEY || '').trim(),
       publicKey: (process.env.FLUTTERWAVE_PUBLIC_KEY || '').trim(),

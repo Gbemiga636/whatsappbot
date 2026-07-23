@@ -183,6 +183,15 @@ async function handleIncomingMessage(from, message) {
   const choice = incoming.buttonId || incoming.listId || incoming.text;
   const textLower = (incoming.text || '').trim().toLowerCase();
 
+  const paymentChooser = require('../wallet/paymentChooser');
+  if (paymentChooser.isPaymentMethodChoice(choice)) {
+    await paymentChooser.startPaymentForMethod(
+      phone,
+      choice === 'pay_checkout_opay' ? 'opay' : 'paystack'
+    );
+    return;
+  }
+
   if (choice?.startsWith('contact_')) {
     const handled = await contactHandler.handleChoice(phone, choice, getSession(phone) || session);
     if (handled) return;

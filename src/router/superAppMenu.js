@@ -55,7 +55,7 @@ function buildMainMenuRows(loggedIn, guest) {
     rows.push({ id: 'auth_signup', title: '✨ Create account', description: 'Wallet & saved history' });
     rows.push({ id: 'auth_login', title: '🔐 Log in', description: 'Existing Bygate account' });
   } else {
-    rows.push({ id: 'auth_guest', title: '👤 Continue as guest', description: 'Pay via Paystack at checkout' });
+    rows.push({ id: 'auth_guest', title: '👤 Continue as guest', description: 'Pay via Paystack or OPay' });
     rows.push({ id: 'auth_login', title: '🔐 Log in', description: 'Email & password' });
   }
 
@@ -73,7 +73,7 @@ async function showSuperAppMenu(phone, options = {}) {
   if (loggedIn) {
     header = `*Welcome to ${BRAND}, ${name}!* 🌍\n💳 Wallet: *${wallet.formatNaira(balance)}*`;
   } else if (guest) {
-    header = `*${BRAND} · Guest mode* 👤\n_Pay with Paystack when you checkout_`;
+    header = `*${BRAND} · Guest mode* 👤\n_Pay with Paystack or OPay at checkout_`;
   } else {
     header = `*Welcome to ${BRAND}* 🌍`;
   }
