@@ -64,12 +64,9 @@ function parseSignupBulk(text) {
 async function showAuthWelcome(phone) {
   await whatsapp.sendButtons(
     phone,
-    `*Welcome to Bygate* 🌍\n\n` +
-      `Africa's WhatsApp Super App — airtime, data, bills, food, wallet & more.\n\n` +
-      `*Continue as guest* (Paystack at checkout), *log in*, or *sign up*.\n\n` +
-      `_Your number: +${formatPhone(phone)}_`,
+    `*Hi — welcome to Bygate* 👋\n\nAirtime, data, bills & more.\n\nHow do you want to continue?`,
     [
-      { id: 'auth_guest', title: '👤 Continue as guest' },
+      { id: 'auth_guest', title: '👤 Guest' },
       { id: 'auth_login', title: '🔐 Log in' },
       { id: 'auth_signup', title: '✨ Sign up' },
     ]
@@ -97,40 +94,68 @@ async function startGuest(phone) {
     lastName: null,
   });
 
-  await whatsapp.sendText(
-    phone,
-    `👤 *Guest mode*\n\n` +
-      `Browse and order airtime, data, bills, food & more on *Bygate*.\n` +
-      `When you pay, we'll send a *Paystack link* (card, bank, USSD).\n\n` +
-      `_Create an account anytime to use your wallet & save history._`
-  );
+  await whatsapp.sendText(phone, `👤 *Guest mode* — pay at checkout. Tap a service below.`);
 
   await showSuperAppMenu(phone);
   return { step: 'super_menu', data: { authMode: 'guest' } };
 }
 
 async function startLogin(phone) {
-  await whatsapp.sendText(
-    phone,
-    `*Log in to Bygate*\n\n` +
-      `Reply with your *email address*.\n\n` +
-      `_Or send: email | password (one line)_\n` +
-      `_Type *menu* or *cancel* to go back._`
-  );
-  return { step: 'auth_login_email', data: { authMode: 'login_pending' } };
+  const config = require('../config');
+  const { createPinToken } = require('../security/pinToken');
+  const base = (config.publicBaseUrl || '').replace(/\/$/, '');
+  if (!base) {
+    await whatsapp.sendText(
+      phone,
+      '⚠️ Secure login is unavailable right now (missing PUBLIC_BASE_URL). Please try again shortly.'
+    );
+    return { step: 'auth_welcome', data: { authMode: 'pending' } };
+  }
+
+  const { token } = createPinToken(phone, 'auth_login');
+  const url = `${base}/auth/login?token=${encodeURIComponent(token)}`;
+
+  try {
+    await whatsapp.sendCtaUrl(
+      phone,
+      `🔐 *Log in*\n\nOpen the secure page — password stays off WhatsApp.`,
+      'Log in',
+      url
+    );
+  } catch {
+    await whatsapp.sendText(phone, `🔐 *Log in*\n\n${url}`);
+  }
+
+  return { step: 'auth_web_pending', data: { authMode: 'login_pending' } };
 }
 
 async function startSignup(phone) {
-  await whatsapp.sendText(
-    phone,
-    `*Create your Bygate account*\n\n` +
-      `Send all details in *one line* (use *|* or *,* between fields):\n\n` +
-      `*Format:*\nFirst name | Last name | Email | Password\n\n` +
-      `*Example:*\nAda | Okafor | ada@email.com | mypass123\n\n` +
-      `Phone: *+${formatPhone(phone)}* (from WhatsApp)\n` +
-      `_Password: min 6 characters. Type *menu* or *cancel* to go back._`
-  );
-  return { step: 'auth_signup', data: { authMode: 'signup_pending', signupStep: 'bulk' } };
+  const config = require('../config');
+  const { createPinToken } = require('../security/pinToken');
+  const base = (config.publicBaseUrl || '').replace(/\/$/, '');
+  if (!base) {
+    await whatsapp.sendText(
+      phone,
+      '⚠️ Secure signup is unavailable right now. Please try again shortly.'
+    );
+    return { step: 'auth_welcome', data: { authMode: 'pending' } };
+  }
+
+  const { token } = createPinToken(phone, 'auth_signup');
+  const url = `${base}/auth/signup?token=${encodeURIComponent(token)}`;
+
+  try {
+    await whatsapp.sendCtaUrl(
+      phone,
+      `✨ *Sign up*\n\nCreate your account on the secure page, then set your PIN.`,
+      'Sign up',
+      url
+    );
+  } catch {
+    await whatsapp.sendText(phone, `✨ *Sign up*\n\n${url}`);
+  }
+
+  return { step: 'auth_web_pending', data: { authMode: 'signup_pending' } };
 }
 
 async function showSignupConfirm(phone, draft) {

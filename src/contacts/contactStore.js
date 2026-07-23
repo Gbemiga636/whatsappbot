@@ -207,17 +207,10 @@ function formatContactLine(c) {
 
 function contactsHelpText() {
   return (
-    `📇 *Saved contacts*\n\n` +
-    `*Save a contact:*\n` +
-    `save contact Mama 08012345678\n\n` +
-    `*Or* share their contact card from WhatsApp (📎 → Contact).\n\n` +
-    `*Manage anytime:*\n` +
-    `• *my contacts* — view all\n` +
-    `• *edit Mama 08099998888* — update\n` +
-    `• *delete Mama* — remove\n\n` +
-    `*Then order by name:*\n` +
-    `MTN 500 airtime for Mama\n` +
-    `buy data for John`
+    `📇 *Contacts*\n\n` +
+    `Save: \`save contact Mama 080…\`\n` +
+    `Or share a contact card.\n\n` +
+    `Then: *500 airtime for Mama*`
   );
 }
 

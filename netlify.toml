@@ -37,6 +37,11 @@
   schedule = "*/15 * * * *"
   timeout = 26
 
+# Catch paid-but-abandoned browser returns (webhook backup)
+[functions."complete-pending-payments"]
+  schedule = "*/5 * * * *"
+  timeout = 26
+
 # ── WhatsApp bot / payments (Express) — force so Next does not take these paths ──
 [[redirects]]
   from = "/webhook"

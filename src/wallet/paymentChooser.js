@@ -31,10 +31,7 @@ async function offerPaymentMethods(phone, pending) {
 
   await whatsapp.sendButtons(
     phone,
-    `*Choose how to pay*\n\n` +
-      `• *Paystack* — card, bank, USSD (OPay also available inside Paystack)\n` +
-      (opay.isConfigured() ? `• *OPay* — open OPay checkout directly\n` : '') +
-      `\n_Your order / wallet updates only after payment succeeds._`,
+    `*Pay how?*\nPick Paystack or OPay.`,
     buttons
   );
 
@@ -65,7 +62,7 @@ async function startPaymentForMethod(phone, method) {
     const label = provider === 'opay' ? 'Pay with OPay' : 'Pay with Paystack';
     await whatsapp.sendCtaUrl(
       norm,
-      `Pay *${formatNaira(result.amount)}* via *${provider === 'opay' ? 'OPay' : 'Paystack'}*.\nWallet updates automatically after payment.`,
+      `Pay *${formatNaira(result.amount)}* · ${provider === 'opay' ? 'OPay' : 'Paystack'}`,
       label,
       result.paymentUrl
     );
@@ -97,7 +94,7 @@ async function startPaymentForMethod(phone, method) {
   const label = provider === 'opay' ? 'Pay with OPay' : 'Pay with Paystack';
   await whatsapp.sendCtaUrl(
     norm,
-    `Pay *${formatNaira(payment.total)}* via *${provider === 'opay' ? 'OPay' : 'Paystack'}*.\nFulfilled automatically after payment confirms.`,
+    `Pay *${formatNaira(payment.total)}* · ${provider === 'opay' ? 'OPay' : 'Paystack'}`,
     label,
     payment.paymentUrl
   );

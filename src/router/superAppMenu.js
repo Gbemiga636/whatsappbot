@@ -71,25 +71,21 @@ async function showSuperAppMenu(phone, options = {}) {
 
   let header;
   if (loggedIn) {
-    header = `*Welcome to ${BRAND}, ${name}!* 🌍\n💳 Wallet: *${wallet.formatNaira(balance)}*`;
+    header = `Hi *${name}* · Wallet *${wallet.formatNaira(balance)}*`;
   } else if (guest) {
-    header = `*${BRAND} · Guest mode* 👤\n_Pay with Paystack or OPay at checkout_`;
+    header = `*Bygate* · Guest`;
   } else {
-    header = `*Welcome to ${BRAND}* 🌍`;
+    header = `*Bygate*`;
   }
 
   const safeRows = buildMainMenuRows(loggedIn, guest);
 
   const tip = pickTip();
   const menuBody =
-    `${header}\n\n` +
-    `*Quick order:* 500 airtime for Mama · airtime for 080…\n\n` +
-    `📇 *Save contacts:* \`save contact Mama 08012345678\`\n` +
-    `🔔 *Reminders:* \`remind me Pay rent on 28/07\`\n` +
-    `👥 *Bulk airtime:* tap *Bulk airtime* or list numbers\n` +
-    (loggedIn ? `💰 *Top up wallet:* Paystack — card, bank, USSD\n\n` : `\n`) +
-    (tip ? `${tip}\n\n` : '') +
-    `Or tap a service below.`;
+    `${header}\n` +
+    `Say e.g. *500 airtime for Mama*\n` +
+    (tip ? `${tip}\n` : '') +
+    `Or pick below 👇`;
 
   try {
     await whatsapp.sendList(phone, menuBody, 'Open menu', [{ title: `${BRAND} services`, rows: safeRows }]);

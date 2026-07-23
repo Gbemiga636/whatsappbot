@@ -190,15 +190,8 @@ function formatWhen(iso) {
 function remindersHelp() {
   return (
     `🔔 *Reminders*\n\n` +
-    `Say it naturally — I'll understand:\n` +
-    `• remind me to drink water every day at 7:45pm\n` +
-    `• remind me Pay rent on 28/07/2026\n` +
-    `• remind me Call Mama tomorrow at 5pm\n` +
-    `• remind me Birthday Ada on 25/12 every year\n\n` +
-    `*Manage:*\n` +
-    `• *my reminders* — list\n` +
-    `• *delete reminder drink water* — remove\n\n` +
-    `_We'll message you on WhatsApp when it's time._`
+    `Say: *remind me Call Mama tomorrow 5pm*\n` +
+    `List: *my reminders*`
   );
 }
 

@@ -91,7 +91,7 @@ async function handleContactCommand(phone, text) {
     await whatsapp.sendText(
       phone,
       cmd.action === 'edit_prompt'
-        ? `✏️ To update a contact, send:\n*edit Name 08012345678*\n\nOr *delete Name* to remove one.\n\n${await listContactsMessage(phone)}`
+        ? `✏️ Send: *edit Name 080…*\nOr *delete Name*`
         : contactStore.contactsHelpText()
     );
     return true;

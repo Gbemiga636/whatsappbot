@@ -25,11 +25,8 @@ async function saveAndConfirm(phone, { title, whenText, date, frequency }) {
   const r = result.reminder;
   await whatsapp.sendText(
     phone,
-    `✅ *Reminder set*\n\n` +
-      `*${r.title}*\n` +
-      `${reminderStore.formatWhen(r.remindAt)}` +
-      (r.frequency !== 'once' ? `\nRepeats: *${r.frequency}*` : '') +
-      `\n\n_We'll message you here on WhatsApp._`
+    `✅ *Reminder set*\n*${r.title}*\n${reminderStore.formatWhen(r.remindAt)}` +
+      (r.frequency !== 'once' ? ` · *${r.frequency}*` : '')
   );
   return result;
 }

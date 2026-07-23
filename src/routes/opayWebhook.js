@@ -118,15 +118,17 @@ async function opayCallback(req, res) {
         const fulfilled = await fulfillVerifiedOpayPayment(reference, Number(verify.amount || 0));
         ok = fulfilled.ok;
         statusLine = ok
-          ? 'Payment confirmed. Check WhatsApp — your airtime / wallet update should already be there.'
-          : 'Payment received. If WhatsApp is quiet, send *paid* in the chat and we will finish it.';
+          ? 'Payment confirmed. You can close this page — we already finish your order in the background and message you on WhatsApp.'
+          : 'Payment received. You can close this tab — we keep confirming in the background and will update WhatsApp automatically.';
       } else {
-        statusLine = 'Payment is still processing. Return to WhatsApp in a moment, or send *paid*.';
+        statusLine =
+          'Payment is still confirming. You can leave this page — we finish in the background and notify you on WhatsApp.';
       }
     }
   } catch (err) {
     logger.error('OPay callback fulfill failed', { reference, message: err.message });
-    statusLine = 'Payment received. Return to WhatsApp and send *paid* if nothing arrives.';
+    statusLine =
+      'Payment received. You can close this page — we continue in the background. If WhatsApp is quiet, send *paid*.';
   }
 
   const waNumber = (

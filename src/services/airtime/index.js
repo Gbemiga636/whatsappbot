@@ -393,7 +393,7 @@ class AirtimeService extends BaseService {
 
     await this.buttons(
       ctx.phone,
-      `*Confirm ${airtime.type}*\n\n${detail}\nNetwork: ${airtime.network}\nPhone: ${airtime.phone}\n\n${pricing.text}`,
+      `*Confirm ${airtime.type}*\n${detail}\n${airtime.network} → ${airtime.phone}\n${pricing.text}`,
       buttons.slice(0, 3)
     );
     await this.updateSession(ctx.phone, { step: this.STEPS.CONFIRM, data: { airtime } });
@@ -403,13 +403,7 @@ class AirtimeService extends BaseService {
     const recipients = seed.recipients || [];
     await this.reply(
       ctx.phone,
-      `*👥 Airtime for multiple people*\n\n` +
-        `Send recipients any of these ways:\n` +
-        `• Numbers: \`08011112222, 08033334444\`\n` +
-        `• Saved names: \`Mama, John\`\n` +
-        `• *Share contact cards* from WhatsApp (📎 → Contact)\n\n` +
-        `_We can't read your phone contacts automatically — share or save them here first._\n\n` +
-        `When done, tap *Continue*.`
+      `*Bulk airtime*\n\nSend numbers, saved names, or share contacts.\nThen tap *Continue*.`
     );
     await this.updateSession(ctx.phone, {
       step: this.STEPS.BULK_RECIPIENTS,

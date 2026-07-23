@@ -34,7 +34,7 @@ async function sendPortalLink(phone, { purpose, pendingPurchase, cta, message })
   if (!base) {
     await whatsapp.sendText(
       phone,
-      '⚠️ *PIN portal unavailable*\n\nServer needs `PUBLIC_BASE_URL` in `.env` (your Cloudflare tunnel URL).\n\nExample:\n`PUBLIC_BASE_URL=https://your-tunnel.trycloudflare.com`\n\nThen run `npm run tunnel` in a separate terminal.'
+      '⚠️ PIN page unavailable right now. Try again in a moment.'
     );
     return false;
   }
@@ -46,7 +46,7 @@ async function sendPortalLink(phone, { purpose, pendingPurchase, cta, message })
   try {
     await whatsapp.sendCtaUrl(
       phone,
-      `${message}\n\n_Opens a secure Bygate page in your browser. Your PIN is never saved in this chat._`,
+      `${message}`,
       cta,
       url
     );
@@ -60,44 +60,34 @@ async function sendPortalLink(phone, { purpose, pendingPurchase, cta, message })
       error: metaErr?.message || err.message,
       code: metaErr?.code,
     });
-    await whatsapp.sendText(
-      phone,
-      `${message}\n\n` +
-        `🔗 *Secure link:*\n${url}\n\n` +
-        `_The button could not be shown — open the link above to continue._`
-    );
+    await whatsapp.sendText(phone, `${message}\n\n🔗 ${url}`);
     return true;
   }
 }
 
 async function promptSetPin(phone, { pendingPurchase } = {}) {
-  const note = pendingPurchase
-    ? 'Set your PIN *once* — you will reuse the same PIN for future purchases.'
-    : 'Set once — you will reuse the same PIN for all wallet purchases.';
-
   return sendPortalLink(phone, {
     purpose: 'set',
     pendingPurchase,
     cta: 'Set PIN',
-    message:
-      `🔐 *Set transaction PIN (one time)*\n\n${note}\n\nTap below to open the *secure PIN page*.`,
+    message: pendingPurchase
+      ? `🔐 *Set your PIN*\n\nThen we’ll finish your payment.`
+      : `🔐 *Set your PIN*\n\nYou’ll use this same PIN for wallet payments.`,
   });
 }
 
 async function promptVerifyPin(phone, pendingPurchase) {
   const wallet = require('../wallet/walletService');
-  const summary = pendingPurchase?.summaryText || 'Authorize this payment';
+  const summary = pendingPurchase?.summaryText || 'this payment';
   const amount = pendingPurchase?.baseAmount
-    ? `\nAmount: *${wallet.formatNaira(pendingPurchase.baseAmount)}*`
+    ? ` · *${wallet.formatNaira(pendingPurchase.baseAmount)}*`
     : '';
 
   return sendPortalLink(phone, {
     purpose: 'verify',
     pendingPurchase,
-    cta: 'Authorize',
-    message:
-      `🔐 *Confirm with your PIN*\n\n${summary}${amount}\n\n` +
-      `Enter your *existing* transaction PIN on the secure page (not a new one).`,
+    cta: 'Enter PIN',
+    message: `🔐 *Confirm*\n${summary}${amount}`,
   });
 }
 
@@ -110,8 +100,7 @@ async function promptChangePin(phone) {
   return sendPortalLink(phone, {
     purpose: 'change',
     cta: 'Change PIN',
-    message:
-      '🔐 *Change transaction PIN*\n\nTap below to update your PIN on our secure page.',
+    message: `🔐 *Change PIN*`,
   });
 }
 

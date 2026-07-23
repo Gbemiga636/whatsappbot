@@ -19,6 +19,7 @@ const AUTH_STEPS = new Set([
   'auth_otp_email',
   'auth_otp_code',
   'auth_gate',
+  'auth_web_pending',
 ]);
 
 function useSupabaseAuth() {
@@ -31,6 +32,7 @@ const AUTH_IN_PROGRESS_STEPS = new Set([
   'auth_signup',
   'auth_otp_email',
   'auth_otp_code',
+  'auth_web_pending',
 ]);
 
 const AUTH_CANCEL_WORDS = new Set(['cancel', 'stop', 'quit', 'exit', 'back']);
@@ -118,24 +120,35 @@ async function handleAuthSteps(phone, message, session) {
       return true;
     }
 
-    if (session.step === 'auth_login_email') {
-      const next = await supabaseFlow.handleLoginEmail(normalizedPhone, text, data);
-      await applyAuthStepResult(normalizedPhone, next);
+    // Waiting for user to finish secure browser login/signup
+    if (session.step === 'auth_web_pending') {
+      if (choice === 'auth_login') {
+        const next = await supabaseFlow.startLogin(normalizedPhone);
+        setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
+        return true;
+      }
+      if (choice === 'auth_signup') {
+        const next = await supabaseFlow.startSignup(normalizedPhone);
+        setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
+        return true;
+      }
+      await whatsapp.sendText(
+        normalizedPhone,
+        '🔐 Finish on the secure page we sent — or type *menu* / *login* / *signup*.'
+      );
       return true;
     }
 
-    if (session.step === 'auth_login_password') {
-      const next = await supabaseFlow.handleLoginPassword(normalizedPhone, text, data);
-      await applyAuthStepResult(normalizedPhone, next);
+    // Legacy in-chat password steps — redirect to secure web instead
+    if (session.step === 'auth_login_email' || session.step === 'auth_login_password') {
+      const next = await supabaseFlow.startLogin(normalizedPhone);
+      setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
       return true;
     }
 
     if (session.step === 'auth_signup') {
-      const next = await supabaseFlow.handleSignupInput(normalizedPhone, text, data, {
-        buttonId,
-        listId,
-      });
-      await applyAuthStepResult(normalizedPhone, next);
+      const next = await supabaseFlow.startSignup(normalizedPhone);
+      setSession(normalizedPhone, { step: next.step, activeService: null, data: next.data });
       return true;
     }
 

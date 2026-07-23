@@ -748,10 +748,7 @@ async function purchaseWithWallet(phone, { service, baseAmount, metadata = {}, e
 function formatWalletSummary(baseAmount) {
   const { base, commission, total, rate } = calculateWithCommission(baseAmount);
   return {
-    text:
-      `Amount: ${formatNaira(base)}\n` +
-      `Bygate fee (${rate}%): ${formatNaira(commission)}\n` +
-      `*Total: ${formatNaira(total)}*`,
+    text: `*Total ${formatNaira(total)}* _(incl. ${rate}% fee)_`,
     base,
     commission,
     total,

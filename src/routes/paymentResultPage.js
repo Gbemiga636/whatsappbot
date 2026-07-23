@@ -390,8 +390,8 @@ function renderPaymentResultPage({
                 </svg>
                 Back to WhatsApp
               </a>
-              <p class="hint">Your order updates in the chat automatically. If nothing arrives, tap above — we’ll finish it.</p>`
-            : `<p class="hint">Return to WhatsApp to see your order update.</p>`
+              <p class="hint">You can close this page anytime — we finish your order in the background and message you on WhatsApp.</p>`
+            : `<p class="hint">Return to WhatsApp to see your order update. Fulfillment continues even if you leave this page.</p>`
         }
       </div>
 

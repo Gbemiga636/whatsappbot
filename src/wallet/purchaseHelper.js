@@ -21,9 +21,7 @@ async function sendTopUpPrompt(phone, shortfall, context = '') {
 
   await whatsapp.sendText(
     phone,
-    `💳 *Insufficient balance*\n\n` +
-      `You need ${wallet.formatNaira(amount)} more${context ? ` for ${context}` : ''}.\n\n` +
-      `Choose Paystack or OPay to top up.`
+    `💳 Need *${wallet.formatNaira(amount)}* more${context ? ` for ${context}` : ''}.\nTop up to continue:`
   );
 
   const offered = await paymentChooser.offerPaymentMethods(phone, {
@@ -73,11 +71,7 @@ async function executePendingPurchase(phone, pending, { pinVerified = false } = 
     const pricing = wallet.formatWalletSummary(baseAmount);
     await whatsapp.sendText(
       phone,
-      `💳 *Not enough balance*\n\n` +
-        `${summaryText || service}\n\n` +
-        `${pricing.text}\n\n` +
-        `Your balance: *${wallet.formatNaira(afford.balance)}*\n` +
-        `You need: *${wallet.formatNaira(afford.shortfall)}* more`
+      `💳 Balance *${wallet.formatNaira(afford.balance)}* · need *${wallet.formatNaira(afford.shortfall)}* more\n${summaryText || service}\n${pricing.text}`
     );
     return sendTopUpPrompt(phone, afford.shortfall, service);
   }
@@ -198,12 +192,7 @@ async function _confirmAndPay(phone, { service, baseAmount, summaryText, execute
       const pricing = wallet.formatWalletSummary(baseAmount);
       await whatsapp.sendText(
         phone,
-        `💳 *Not enough balance*\n\n` +
-          `${summaryText}\n\n` +
-          `${pricing.text}\n\n` +
-          `Your balance: *${wallet.formatNaira(purchase.balance)}*\n` +
-          `You need: *${wallet.formatNaira(purchase.shortfall)}* more\n\n` +
-          `_The total includes a small Bygate service fee._`
+        `💳 Need *${wallet.formatNaira(purchase.shortfall)}* more\n${summaryText}\n${pricing.text}`
       );
       return sendTopUpPrompt(phone, purchase.shortfall, service);
     }
@@ -236,10 +225,7 @@ async function confirmAndPayAsGuest(phone, opts) {
 
   await whatsapp.sendText(
     phone,
-    `💳 *Guest checkout*\n\n` +
-      `${opts.summaryText}\n\n` +
-      `${pricing.text}\n\n` +
-      `Pick *Paystack* or *OPay* — your order is sent only after payment succeeds.`
+    `💳 *Guest checkout*\n${opts.summaryText}\n${pricing.text}\n\nPick how to pay:`
   );
 
   const offered = await paymentChooser.offerPaymentMethods(phone, {
@@ -287,12 +273,7 @@ async function confirmAndPay(phone, opts) {
     const pricing = wallet.formatWalletSummary(opts.baseAmount);
     await whatsapp.sendText(
       phone,
-      `💳 *Not enough balance*\n\n` +
-        `${opts.summaryText || opts.service}\n\n` +
-        `${pricing.text}\n\n` +
-        `Your balance: *${wallet.formatNaira(afford.balance)}*\n` +
-        `You need: *${wallet.formatNaira(afford.shortfall)}* more\n\n` +
-        `_Top up your wallet, then confirm again._`
+      `💳 Need *${wallet.formatNaira(afford.shortfall)}* more\n${opts.summaryText || opts.service}\n${pricing.text}`
     );
     return sendTopUpPrompt(phone, afford.shortfall, opts.service);
   }

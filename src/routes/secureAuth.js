@@ -1,165 +1,205 @@
+/**
+ * Secure WhatsApp auth portal — login & signup outside chat (Bygate brand).
+ * After signup, user is redirected to set their forever transaction PIN.
+ */
+
 const express = require('express');
-const { login, signup } = require('../mysogiAuth');
-const { setUser } = require('../userStore');
+const { signIn, signUp, isValidEmail, isValidName } = require('../auth/supabaseAuth');
+const { createPinToken, verifyPinToken, markPinTokenUsed } = require('../security/pinToken');
+const { setSession } = require('../sessionStore');
 const { sendText } = require('../whatsapp');
+const transactionPin = require('../security/transactionPin');
+const config = require('../config');
+const logger = require('../core/logger');
+const {
+  escapeHtml,
+  renderFormPage,
+  renderSuccessPage,
+  renderInvalidPage,
+} = require('./bygateSecureUi');
 
 const router = express.Router();
 
-function page(title, body) {
-  return `<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${title}</title>
-<style>
-*{box-sizing:border-box}body{font-family:system-ui,sans-serif;background:#0f172a;color:#fff;margin:0;padding:24px;min-height:100vh;display:flex;align-items:center;justify-content:center}
-.card{background:#1e293b;border-radius:16px;padding:28px;max-width:400px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.3)}
-h1{font-size:1.25rem;margin:0 0 8px}p{color:#94a3b8;font-size:.9rem;margin:0 0 20px}
-label{display:block;font-size:.85rem;margin:12px 0 4px;color:#cbd5e1}
-input,select{width:100%;padding:12px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#fff;font-size:1rem}
-button{width:100%;margin-top:20px;padding:14px;border:none;border-radius:8px;background:#e11d48;color:#fff;font-size:1rem;font-weight:600;cursor:pointer}
-.err{background:#7f1d1d;padding:10px;border-radius:8px;margin-bottom:12px;font-size:.85rem}
-.ok{text-align:center;padding:20px 0}.ok h2{color:#4ade80}
-a{color:#38bdf8}
-</style></head><body><div class="card">${body}</div></body></html>`;
+function publicBase() {
+  return (config.publicBaseUrl || '').replace(/\/$/, '');
+}
+
+function waDeepLink() {
+  const num = (
+    process.env.ADMIN_WHATSAPP_NUMBER ||
+    process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ||
+    ''
+  ).replace(/\D/g, '');
+  return num ? `https://wa.me/${num}?text=${encodeURIComponent('menu')}` : '';
+}
+
+function requireAuthToken(token, purpose) {
+  const payload = verifyPinToken(token);
+  if (!payload || payload.purpose !== purpose) return null;
+  return payload;
+}
+
+async function notify(phone, text) {
+  try {
+    await sendText(phone, text);
+  } catch (err) {
+    logger.warn('Auth portal WhatsApp notify failed', { phone, error: err.message });
+  }
+}
+
+function loginForm(token, error = '', email = '') {
+  return renderFormPage({
+    title: 'Log in',
+    badge: '🔐 Secure login',
+    heading: 'Log in to Bygate',
+    lead: 'Enter your email and password here — <strong>never in WhatsApp chat</strong>.',
+    error,
+    formHtml: `<form method="post" action="/auth/login">
+<input type="hidden" name="token" value="${escapeHtml(token)}"/>
+<label for="email">Email</label>
+<input id="email" type="email" name="email" required autocomplete="username" value="${escapeHtml(email)}"/>
+<label for="password">Password</label>
+<input id="password" type="password" name="password" required autocomplete="current-password"/>
+<button class="btn" type="submit">Log in</button>
+</form>
+<p class="foot">No account? Return to WhatsApp and tap <strong>Sign up</strong>.</p>`,
+  });
+}
+
+function signupForm(token, error = '', values = {}) {
+  return renderFormPage({
+    title: 'Sign up',
+    badge: '✨ Create account',
+    heading: 'Create your Bygate account',
+    lead: 'Password stays on this secure page. After signup you’ll set your <strong>forever transaction PIN</strong>.',
+    error,
+    formHtml: `<form method="post" action="/auth/signup">
+<input type="hidden" name="token" value="${escapeHtml(token)}"/>
+<label for="firstName">First name</label>
+<input id="firstName" name="firstName" required minlength="2" value="${escapeHtml(values.firstName || '')}"/>
+<label for="lastName">Last name</label>
+<input id="lastName" name="lastName" required minlength="2" value="${escapeHtml(values.lastName || '')}"/>
+<label for="email">Email</label>
+<input id="email" type="email" name="email" required autocomplete="username" value="${escapeHtml(values.email || '')}"/>
+<label for="password">Password</label>
+<input id="password" type="password" name="password" required minlength="6" autocomplete="new-password"/>
+<p class="hint">Min 6 characters · never typed in WhatsApp</p>
+<button class="btn" type="submit">Create account &amp; set PIN</button>
+</form>`,
+  });
 }
 
 router.get('/login', (req, res) => {
-  const wa = req.query.wa || '';
-  res.send(
-    page(
-      'Bygate Login',
-      `<h1>Bygate Login</h1>
-<p>Secure sign-in — password is not saved in WhatsApp chat.</p>
-<form method="post" action="/auth/login">
-<input type="hidden" name="wa" value="${wa}"/>
-<label>Email</label><input type="email" name="email" required autocomplete="username"/>
-<label>Password</label><input type="password" name="password" required autocomplete="current-password"/>
-<button type="submit">Login</button>
-</form>`
-    )
-  );
+  const payload = requireAuthToken(req.query.token, 'auth_login');
+  if (!payload) return res.status(400).type('html').send(renderInvalidPage());
+  return res.type('html').send(loginForm(req.query.token));
 });
 
 router.post('/login', async (req, res) => {
-  const { email, password, wa } = req.body;
-  const result = await login(email, password);
+  const payload = requireAuthToken(req.body.token, 'auth_login');
+  if (!payload) return res.status(400).type('html').send(renderInvalidPage());
 
+  const email = String(req.body.email || '').trim();
+  const password = String(req.body.password || '');
+
+  if (!isValidEmail(email)) {
+    return res.type('html').send(loginForm(req.body.token, 'Enter a valid email.', email));
+  }
+
+  const result = await signIn({ phone: payload.phone, email, password });
   if (!result.ok) {
-    return res.send(
-      page(
-        'Login failed',
-        `<div class="err">${result.message}</div>
-<form method="post" action="/auth/login">
-<input type="hidden" name="wa" value="${wa || ''}"/>
-<label>Email</label><input type="email" name="email" value="${email || ''}" required/>
-<label>Password</label><input type="password" name="password" required/>
-<button type="submit">Try again</button>
-</form>`
-      )
+    return res.type('html').send(loginForm(req.body.token, result.message, email));
+  }
+
+  markPinTokenUsed(payload);
+  setSession(payload.phone, {
+    step: 'super_menu',
+    activeService: null,
+    data: { authMode: 'authenticated', userEmail: result.user.email },
+  });
+
+  const pinSet = await transactionPin.isPinSetAsync(payload.phone);
+  if (!pinSet) {
+    const { token: pinToken } = createPinToken(payload.phone, 'set');
+    await notify(
+      payload.phone,
+      `✅ Welcome back! Set your PIN next.`
     );
+    return res.redirect(302, `${publicBase()}/pin/set?token=${encodeURIComponent(pinToken)}`);
   }
 
-  if (wa) {
-    setUser(wa, {
-      authMode: 'authenticated',
-      email: result.user.email,
-      firstName: result.user.firstName,
-      lastName: result.user.lastName,
-      mysogiToken: result.token,
-      userId: result.user.id,
-    });
-    try {
-      await sendText(
-        wa,
-        `✅ *You are logged in!*\n\nWelcome, ${result.user.firstName || result.user.email}.\n\nType *menu* to create ads on Bygate.`
-      );
-    } catch {
-      // token may be expired on whatsapp side
-    }
-  }
+  await notify(
+    payload.phone,
+    `✅ Welcome back, ${result.user.firstName || 'friend'}! Type *menu*.`
+  );
 
-  res.send(
-    page(
-      'Logged in',
-      `<div class="ok"><h2>✓ You are logged in</h2>
-<p>Welcome, <strong>${result.user.firstName || result.user.email}</strong></p>
-<p>Return to WhatsApp and type <strong>menu</strong> to continue.</p></div>`
-    )
+  return res.type('html').send(
+    renderSuccessPage({
+      title: 'Logged in',
+      heading: 'You’re logged in',
+      message: 'Return to WhatsApp and type menu to open Bygate.',
+      waHref: waDeepLink(),
+    })
   );
 });
 
 router.get('/signup', (req, res) => {
-  const wa = req.query.wa || '';
-  res.send(
-    page(
-      'Bygate Sign Up',
-      `<h1>Create account</h1>
-<p>Same account as mysogi.com.ng</p>
-<form method="post" action="/auth/signup">
-<input type="hidden" name="wa" value="${wa}"/>
-<label>First name</label><input name="firstName" required/>
-<label>Last name</label><input name="lastName" required/>
-<label>Email</label><input type="email" name="email" required autocomplete="username"/>
-<label>Password</label><input type="password" name="password" required minlength="6" autocomplete="new-password"/>
-<label>Account type</label>
-<select name="userType"><option value="individual">Individual</option><option value="business">Business</option></select>
-<button type="submit">Create account</button>
-</form>`
-    )
-  );
+  const payload = requireAuthToken(req.query.token, 'auth_signup');
+  if (!payload) return res.status(400).type('html').send(renderInvalidPage());
+  return res.type('html').send(signupForm(req.query.token));
 });
 
 router.post('/signup', async (req, res) => {
-  const { firstName, lastName, email, password, userType, wa } = req.body;
-  const result = await signup(
-    {
-      firstName,
-      lastName,
-      email,
-      password,
-      userType: userType || 'individual',
-      businessName: req.body.businessName || `${firstName} ${lastName}`,
-    },
-    wa
-  );
+  const payload = requireAuthToken(req.body.token, 'auth_signup');
+  if (!payload) return res.status(400).type('html').send(renderInvalidPage());
+
+  const firstName = String(req.body.firstName || '').trim();
+  const lastName = String(req.body.lastName || '').trim();
+  const email = String(req.body.email || '').trim();
+  const password = String(req.body.password || '');
+  const values = { firstName, lastName, email };
+
+  if (!isValidName(firstName) || !isValidName(lastName)) {
+    return res
+      .type('html')
+      .send(signupForm(req.body.token, 'First and last name must be at least 2 characters.', values));
+  }
+  if (!isValidEmail(email)) {
+    return res.type('html').send(signupForm(req.body.token, 'Enter a valid email address.', values));
+  }
+  if (!password || password.length < 6) {
+    return res
+      .type('html')
+      .send(signupForm(req.body.token, 'Password must be at least 6 characters.', values));
+  }
+
+  const result = await signUp({
+    phone: payload.phone,
+    email,
+    password,
+    firstName,
+    lastName,
+  });
 
   if (!result.ok) {
-    return res.send(
-      page(
-        'Sign up failed',
-        `<div class="err">${result.message}</div>
-<p><a href="/auth/signup?wa=${wa || ''}">Try again</a></p>`
-      )
-    );
+    return res.type('html').send(signupForm(req.body.token, result.message, values));
   }
 
-  if (wa) {
-    setUser(wa, {
-      authMode: 'authenticated',
-      email: result.user?.email || email,
-      firstName: result.user?.firstName || firstName,
-      lastName: result.user?.lastName || lastName,
-      mysogiToken: result.token,
-      userId: result.user?.id,
-    });
-    try {
-      await sendText(
-        wa,
-        `✅ *Account created — you are logged in!*\n\nWelcome, ${firstName}.\n\nType *menu* to create your first ad.`
-      );
-    } catch {
-      /* ignore */
-    }
-  }
+  markPinTokenUsed(payload);
+  setSession(payload.phone, {
+    step: 'super_menu',
+    activeService: null,
+    data: { authMode: 'authenticated', userEmail: result.user.email, needsPinSetup: true },
+  });
 
-  res.send(
-    page(
-      'Account created',
-      `<div class="ok"><h2>✓ You are logged in</h2>
-<p>Welcome to Bygate, <strong>${firstName}</strong>!</p>
-<p>Return to WhatsApp and type <strong>menu</strong>.</p></div>`
-    )
+  const { token: pinToken } = createPinToken(payload.phone, 'set');
+  await notify(
+    payload.phone,
+    `✅ Account created, ${firstName}! Set your PIN on the next page.`
   );
+
+  // Force PIN setup immediately after account creation
+  return res.redirect(302, `${publicBase()}/pin/set?token=${encodeURIComponent(pinToken)}`);
 });
 
 module.exports = router;
