@@ -8,7 +8,8 @@ const LIVE_SERVICE_DETAILS = [
   { id: 'wallet', name: 'Wallet', emoji: '💳', desc: 'Top up, check balance, send money to others' },
   { id: 'airtime', name: 'Airtime', emoji: '📱', desc: 'MTN, Glo, Airtel, 9mobile — airtime top-up' },
   { id: 'bills', name: 'Bills & Pay', emoji: '⚡', desc: 'Electricity, DStv, GOtv, StarTimes, betting top-up' },
-  { id: 'food', name: 'Order Food', emoji: '🍔', desc: 'Chowdeck — restaurants near you, delivery to your door' },
+  { id: 'food', name: 'Order Food', emoji: '🍔', desc: 'Coming soon' },
+  { id: 'reminders', name: 'Reminders', emoji: '🔔', desc: 'Set alerts — remind me drink water every day at 8am' },
   { id: 'partners', name: 'Partner Services', emoji: '🤝', desc: 'Book plumbers, cleaners, delivery & more' },
   { id: 'ai', name: 'AI Assistant', emoji: '🤖', desc: 'Ask anything — homework, business, advice' },
   { id: 'ads', name: 'Ads Studio', emoji: '📢', desc: 'Create flyers, captions & ad campaigns with AI' },
@@ -30,6 +31,7 @@ function buildServicesListText() {
     `• "Pay my DSTV"\n` +
     `• "Fund my Bet9ja account 2000"\n` +
     `• "Top up wallet 5000"\n` +
+    `• "Remind me to drink water every day at 8am"\n` +
     `• "What's my balance"\n\n` +
     `Type *menu* for the button menu anytime.`
   );
@@ -50,7 +52,9 @@ function buildIntentRouterPrompt() {
     `- greet — hi/hello with no specific request (friendly short reply path)\n` +
     `- logout, login, signup\n` +
     `- balance — wallet balance\n` +
-    `- topup — wallet top-up (params.amount)\n` +
+    `- topup — wallet top-up (params.amount) — NOT for "remind me" messages\n` +
+    `- set_reminder — create a reminder (remind me / set reminder / every day at …)\n` +
+    `- list_reminders — my reminders / show reminders\n` +
     `- set_pin, change_pin\n` +
     `- buy_airtime — params: network, amount, recipient (self|other), phone\n` +
     `- buy_data — params: network, plan (1GB etc), recipient, phone, period (daily|weekly|monthly)\n` +
@@ -64,6 +68,8 @@ function buildIntentRouterPrompt() {
     `- "fund bet9ja" / "sportybet" / "fund my sporting account" / "betting" = buy_betting\n` +
     `- "what services" / "what do you offer" = list_services\n` +
     `- If user wants to buy/pay/fund something, use purchase actions — NOT chat\n` +
+    `- "remind me …" / "set a reminder" / "every day at 8am" = set_reminder — NEVER chat or topup\n` +
+    `- "my reminders" = list_reminders\n` +
     `- Extract ALL details from message into params (network, amount, phone, plan)\n` +
     `- recipient self if "for me/myself/my line", other if phone number or "for someone"\n\n` +
     `Examples:\n` +
@@ -72,6 +78,8 @@ function buildIntentRouterPrompt() {
     `"fund my sporting account" → {"service":"bills","action":"buy_betting","params":{"bookmaker":"SportyBet"},"confidence":"high"}\n` +
     `"buy mtn 1gb weekly data" → {"service":"airtime","action":"buy_data","params":{"network":"MTN","plan":"1GB","period":"weekly","recipient":"self"},"confidence":"high"}\n` +
     `"get me airtime" → {"service":"airtime","action":"buy_airtime","params":{"recipient":"self"},"confidence":"high"}\n` +
+    `"remind me to drink water every day at 7:45pm" → {"service":null,"action":"set_reminder","params":{},"confidence":"high"}\n` +
+    `"my reminders" → {"service":null,"action":"list_reminders","params":{},"confidence":"high"}\n` +
     `"I need 500 naira MTN airtime" → {"service":"airtime","action":"buy_airtime","params":{"network":"MTN","amount":500,"recipient":"self"},"confidence":"high"}\n` +
     `"pay electricity IKEDC 45012345678 3000" → {"service":"bills","action":"pay_bill","params":{"bill_type":"electricity","provider":"IKEDC","meter":"45012345678","amount":3000},"confidence":"high"}\n` +
     `"how do I pay dstv" → {"service":"bills","action":"open","params":{},"confidence":"high"}\n` +
@@ -91,6 +99,7 @@ function buildChatAssistantPrompt() {
     `- Use WhatsApp formatting: *bold*, _italic_\n` +
     `- Under 400 words unless explaining something complex\n` +
     `- If they want to order, give the exact phrase AND offer to help if they already said it\n` +
+    `- If they want a reminder, tell them to say: remind me [what] [when] — e.g. remind me drink water every day at 8am\n` +
     `- Never make up prices — say bundles are shown when they order\n` +
     `- You are part of Bygate super-app at mysogi.com.ng`
   );

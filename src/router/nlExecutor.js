@@ -741,6 +741,19 @@ async function _executeNaturalLanguage(phone, intent, ctx) {
   }
 
   if (action === 'topup' || (service === 'wallet' && /topup/i.test(action))) {
+    const { isAuthenticated, isGuest } = require('../userStore');
+    if (!isAuthenticated(phone)) {
+      if (isGuest(phone)) {
+        await whatsapp.sendText(
+          phone,
+          `💰 *Wallet top-up* needs a Bygate account.\n\n` +
+            `As a guest you pay with Paystack at checkout for each order.\n\n` +
+            `*Sign up* to unlock a wallet you can top up once and reuse.`
+        );
+        return !!(await handleAuthAction(phone, 'auth_signup'));
+      }
+      return !!(await handleAuthAction(phone, 'auth_login'));
+    }
     const amount = Number(params.amount);
     const walletSvc = getService('wallet');
     if (amount >= 100) {
@@ -750,6 +763,16 @@ async function _executeNaturalLanguage(phone, intent, ctx) {
     setSession(phone, { ...session, activeService: 'wallet', step: 'wallet_menu' });
     await walletSvc.showTopUpChoice({ phone, step: 'wallet_menu', data: {}, incoming: {} });
     return true;
+  }
+
+  if (action === 'set_reminder' || action === 'reminder' || action === 'add_reminder') {
+    const reminderHandler = require('../reminders/reminderHandler');
+    return reminderHandler.handleReminderCommand(phone, ctx.text || '');
+  }
+
+  if (action === 'list_reminders') {
+    const reminderHandler = require('../reminders/reminderHandler');
+    return reminderHandler.handleReminderCommand(phone, 'my reminders');
   }
 
   if (action === 'buy_airtime') {
@@ -795,6 +818,14 @@ function shouldTryNaturalLanguage(session, incoming) {
 
   const text = incoming.text.trim();
   if (text.length < 2) return false;
+
+  // Reminders are handled before NL — never re-route to top-up / AI menu
+  try {
+    const { looksLikeReminder } = require('../reminders/reminderStore');
+    if (looksLikeReminder(text)) return false;
+  } catch {
+    /* ignore */
+  }
 
   if (/^(menu|home|start|0|cancel|stop)$/i.test(text)) return false;
 
@@ -898,7 +929,19 @@ async function tryNaturalLanguageRoute(phone, incoming, ctx) {
       }
     }
 
-    const publicActions = new Set(['menu', 'help', 'list_services', 'login', 'signup', 'chat', 'greet']);
+    const publicActions = new Set([
+      'menu',
+      'help',
+      'list_services',
+      'login',
+      'signup',
+      'chat',
+      'greet',
+      'set_reminder',
+      'list_reminders',
+      'reminder',
+      'add_reminder',
+    ]);
     if (requiresAuth(phone) && !publicActions.has(intent.action)) {
       await promptLoginRequired(phone);
       return true;

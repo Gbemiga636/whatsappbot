@@ -198,7 +198,8 @@ async function handleIncomingMessage(from, message) {
     if (remHandled) return;
   }
 
-  if (choice === 'menu_reminders') {
+  // List row tap — never treat as NL / wallet / AI
+  if (incoming.listId === 'menu_reminders' || choice === 'menu_reminders') {
     await reminderHandler.showRemindersMenu(phone);
     return;
   }

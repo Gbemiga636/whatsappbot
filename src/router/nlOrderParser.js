@@ -287,6 +287,14 @@ function enrichIntent(intent, text) {
   let action = intent.action || 'open';
   const t = String(text || '').toLowerCase();
 
+  // Never rewrite reminder intents into wallet/airtime
+  if (/remind|reminder/i.test(action) || /\bremind(?:\s+me)?\b/i.test(text || '')) {
+    intent.service = null;
+    intent.action = /list|my reminders/i.test(text || '') ? 'list_reminders' : 'set_reminder';
+    intent.params = merged;
+    return intent;
+  }
+
   const telecomAction = resolveTelecomAction(text, merged, action);
   const hasTelecomSignal =
     !isBettingRequest(text) &&

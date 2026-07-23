@@ -61,6 +61,8 @@ const QUICK_COMMANDS = [
   { match: /^(login|log in|sign in)$/i, action: 'login' },
   { match: /^(signup|sign up|register)$/i, action: 'signup' },
   { match: /^(balance|my balance|wallet balance|check balance)$/i, action: 'balance', service: 'wallet' },
+  { match: /^(my reminders|list reminders|show reminders)$/i, action: 'list_reminders' },
+  { match: /\bremind(?:\s+me)?\b/i, action: 'set_reminder' },
   { match: /(set|create).*(pin|password)/i, action: 'set_pin', service: 'wallet' },
   { match: /change.*(pin|password)/i, action: 'change_pin', service: 'wallet' },
   { match: /^top up(?:\s+(\d+))?$/i, action: 'topup', service: 'wallet' },

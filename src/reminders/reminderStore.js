@@ -1,15 +1,34 @@
 /**
  * WhatsApp reminders — events & recurring alerts.
- * Stored in user.metadata.reminders (and optional Supabase table).
+ * Regex parsing + OpenAI fallback for natural language.
  */
 
 const crypto = require('crypto');
 const { getUser, setUser } = require('../userStore');
 const { getSupabase, isSupabaseReady } = require('../db/supabase');
 const { normalizePhone } = require('../utils/phone');
+const config = require('../config');
 const logger = require('../core/logger');
 
 const MAX_REMINDERS = 30;
+/** Africa/Lagos is UTC+1 year-round (no DST). */
+const LAGOS_OFFSET_MS = 60 * 60 * 1000;
+
+function lagosWallParts(now = new Date()) {
+  const lagos = new Date(now.getTime() + LAGOS_OFFSET_MS);
+  return {
+    year: lagos.getUTCFullYear(),
+    month: lagos.getUTCMonth(), // 0-based
+    day: lagos.getUTCDate(),
+    hour: lagos.getUTCHours(),
+    minute: lagos.getUTCMinutes(),
+  };
+}
+
+/** Build a UTC Date from a Lagos wall-clock time. */
+function fromLagosLocal(year, monthIndex, day, hour, minute) {
+  return new Date(Date.UTC(year, monthIndex, day, hour - 1, minute || 0, 0, 0));
+}
 
 function listLocal(phone) {
   const user = getUser(phone);
@@ -23,103 +42,136 @@ function saveLocal(phone, reminders) {
   });
 }
 
+function extractTimeMatch(text) {
+  const t = String(text || '');
+  // 7:45pm, 7.45pm, 19:45, 8am, at 8, by 7:45 pm
+  return (
+    t.match(/(?:at|by|@)?\s*(\d{1,2})[:.](\d{2})\s*(am|pm)?/i) ||
+    t.match(/(?:at|by|@)?\s*(\d{1,2})\s*(am|pm)\b/i) ||
+    t.match(/\b(\d{1,2})[:.](\d{2})\s*(am|pm)\b/i) ||
+    t.match(/\b(\d{1,2})\s*(am|pm)\b/i)
+  );
+}
+
+/** Returns { hour, minute } in 24h Lagos local from a time match. */
+function parseTimeParts(tm) {
+  if (!tm) return { hour: 9, minute: 0 };
+  const hRaw = Number(tm[1] || 9);
+  let minutes = 0;
+  let ampm = '';
+
+  if (tm[2] != null && /^(am|pm)$/i.test(String(tm[2]))) {
+    ampm = String(tm[2]).toLowerCase();
+  } else if (tm[2] != null && tm[2] !== '') {
+    minutes = Number(tm[2]) || 0;
+    if (tm[3] && /^(am|pm)$/i.test(String(tm[3]))) ampm = String(tm[3]).toLowerCase();
+  } else if (tm[3] && /^(am|pm)$/i.test(String(tm[3]))) {
+    ampm = String(tm[3]).toLowerCase();
+  }
+
+  let h = hRaw;
+  if (ampm === 'pm' && h < 12) h += 12;
+  if (ampm === 'am' && h === 12) h = 0;
+  return { hour: h, minute: minutes };
+}
+
+function timePartsFromText(text) {
+  return parseTimeParts(extractTimeMatch(text));
+}
+
+function normalizeReminderText(text) {
+  return String(text || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\bby\.?\s*/gi, 'by ')
+    .replace(/\bat\.?\s*/gi, 'at ')
+    .replace(/\beveryday\b/gi, 'every day')
+    .replace(/\bevery\s*day\b/gi, 'every day')
+    .replace(/\b(\d{1,2})\s*[.]\s*(\d{2})\s*(am|pm)\b/gi, '$1:$2$3');
+}
+
 function parseDateTime(text, now = new Date()) {
-  const t = String(text || '').trim();
+  let t = normalizeReminderText(text);
   const lower = t.toLowerCase();
+  const wall = lagosWallParts(now);
+  const { hour: th, minute: tm } = timePartsFromText(lower);
 
-  // tomorrow [at HH:MM]
   if (/^tomorrow\b/i.test(lower)) {
-    const d = new Date(now);
-    d.setDate(d.getDate() + 1);
-    const tm = lower.match(/at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-    applyTime(d, tm);
+    const base = fromLagosLocal(wall.year, wall.month, wall.day, th, tm);
+    const d = new Date(base.getTime() + 24 * 60 * 60 * 1000);
     return { ok: true, date: d, frequency: 'once' };
   }
 
-  // today at HH:MM
   if (/^today\b/i.test(lower)) {
-    const d = new Date(now);
-    const tm = lower.match(/at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-    applyTime(d, tm);
-    if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1);
+    let d = fromLagosLocal(wall.year, wall.month, wall.day, th, tm);
+    if (d.getTime() <= now.getTime()) {
+      d = new Date(d.getTime() + 24 * 60 * 60 * 1000);
+    }
     return { ok: true, date: d, frequency: 'once' };
   }
 
-  // every day / daily [at HH:MM]
-  if (/\b(every\s+day|daily)\b/i.test(lower)) {
-    const d = new Date(now);
-    const tm = lower.match(/at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-    applyTime(d, tm || ['', '9', '00']);
-    if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1);
+  // Time only → assume daily (e.g. "8am", "7:45pm")
+  const timeOnly = lower.replace(/^(at|by|@)\s+/, '');
+  if (/^\d{1,2}([:.]\d{2})?\s*(am|pm)?$/i.test(timeOnly)) {
+    let d = fromLagosLocal(wall.year, wall.month, wall.day, th, tm);
+    if (d.getTime() <= now.getTime()) d = new Date(d.getTime() + 24 * 60 * 60 * 1000);
     return { ok: true, date: d, frequency: 'daily' };
   }
 
-  // every week / weekly
+  if (/\b(every\s+day|daily)\b/i.test(lower)) {
+    let d = fromLagosLocal(wall.year, wall.month, wall.day, th, tm);
+    if (d.getTime() <= now.getTime()) d = new Date(d.getTime() + 24 * 60 * 60 * 1000);
+    return { ok: true, date: d, frequency: 'daily' };
+  }
+
   if (/\b(every\s+week|weekly)\b/i.test(lower)) {
-    const d = new Date(now);
-    d.setDate(d.getDate() + 7);
-    const tm = lower.match(/at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-    applyTime(d, tm || ['', '9', '00']);
+    let d = fromLagosLocal(wall.year, wall.month, wall.day, th, tm);
+    d = new Date(d.getTime() + 7 * 24 * 60 * 60 * 1000);
     return { ok: true, date: d, frequency: 'weekly' };
   }
 
-  // yearly / every year / birthday style
   if (/\b(every\s+year|yearly|annually)\b/i.test(lower)) {
     const m = t.match(/(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?/);
     if (!m) return { ok: false, message: 'For yearly reminders use e.g. *25/12 every year*' };
     const day = Number(m[1]);
     const month = Number(m[2]) - 1;
-    let d = new Date(now.getFullYear(), month, day, 9, 0, 0);
-    if (d.getTime() <= now.getTime()) d = new Date(now.getFullYear() + 1, month, day, 9, 0, 0);
+    let d = fromLagosLocal(wall.year, month, day, th, tm);
+    if (d.getTime() <= now.getTime()) {
+      d = fromLagosLocal(wall.year + 1, month, day, th, tm);
+    }
     return { ok: true, date: d, frequency: 'yearly' };
   }
 
-  // DD/MM/YYYY or DD-MM-YYYY [at HH:MM]
-  const m = t.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?/i);
+  const m = t.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
   if (m) {
     let year = Number(m[3]);
     if (year < 100) year += 2000;
     const day = Number(m[1]);
     const month = Number(m[2]) - 1;
-    const d = new Date(year, month, day, 9, 0, 0);
-    if (m[4]) applyTime(d, ['', m[4], m[5] || '0', m[6]]);
+    const d = fromLagosLocal(year, month, day, th, tm);
     if (Number.isNaN(d.getTime())) return { ok: false, message: 'Invalid date.' };
     return { ok: true, date: d, frequency: 'once' };
   }
 
-  // DD/MM (assume this year or next)
-  const m2 = t.match(/^(\d{1,2})[\/\-.](\d{1,2})(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?$/i);
+  const m2 = t.match(/(\d{1,2})[\/\-.](\d{1,2})\b/);
   if (m2) {
     const day = Number(m2[1]);
     const month = Number(m2[2]) - 1;
-    let d = new Date(now.getFullYear(), month, day, 9, 0, 0);
-    if (m2[3]) applyTime(d, ['', m2[3], m2[4] || '0', m2[5]]);
-    if (d.getTime() <= now.getTime()) d = new Date(now.getFullYear() + 1, month, day, d.getHours(), d.getMinutes());
+    let d = fromLagosLocal(wall.year, month, day, th, tm);
+    if (d.getTime() <= now.getTime()) {
+      d = fromLagosLocal(wall.year + 1, month, day, th, tm);
+    }
     return { ok: true, date: d, frequency: 'once' };
   }
 
   return {
     ok: false,
     message:
-      'Date format examples:\n' +
-      '• *28/07/2026*\n' +
-      '• *tomorrow at 9am*\n' +
-      '• *every day at 8am*\n' +
-      '• *25/12 every year*',
+      'I could not read that date/time.\n\nTry:\n' +
+      '• *remind me drink water every day at 8am*\n' +
+      '• *remind me Pay rent on 28/07/2026*\n' +
+      '• *remind me Call Mama tomorrow at 5pm*',
   };
-}
-
-function applyTime(date, tm) {
-  if (!tm) {
-    date.setHours(9, 0, 0, 0);
-    return;
-  }
-  let h = Number(tm[1] || 9);
-  const min = Number(tm[2] || 0);
-  const ampm = (tm[3] || '').toLowerCase();
-  if (ampm === 'pm' && h < 12) h += 12;
-  if (ampm === 'am' && h === 12) h = 0;
-  date.setHours(h, min, 0, 0);
 }
 
 function formatWhen(iso) {
@@ -138,20 +190,58 @@ function formatWhen(iso) {
 function remindersHelp() {
   return (
     `🔔 *Reminders*\n\n` +
-    `*Add one:*\n` +
-    `remind me Pay rent on 28/07/2026\n` +
-    `remind me Call Mama tomorrow at 5pm\n` +
-    `remind me Drink water every day at 8am\n` +
-    `remind me Birthday Ada on 25/12 every year\n\n` +
+    `Say it naturally — I'll understand:\n` +
+    `• remind me to drink water every day at 7:45pm\n` +
+    `• remind me Pay rent on 28/07/2026\n` +
+    `• remind me Call Mama tomorrow at 5pm\n` +
+    `• remind me Birthday Ada on 25/12 every year\n\n` +
     `*Manage:*\n` +
     `• *my reminders* — list\n` +
-    `• *delete reminder Pay rent* — remove\n\n` +
+    `• *delete reminder drink water* — remove\n\n` +
     `_We'll message you on WhatsApp when it's time._`
   );
 }
 
+function looksLikeReminder(text) {
+  const t = String(text || '')
+    .trim()
+    .replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]+\s*/u, '');
+  if (!t) return false;
+  // Ignore long menu paste / guest banner (list-row echo)
+  if (t.length > 180 && /guest mode|pay with paystack|or tap a service/i.test(t)) {
+    return false;
+  }
+  if (/^(my reminders|list reminders|show reminders|reminders?|reminders?\s+help)$/i.test(t)) {
+    return true;
+  }
+  if (/^(?:delete|remove|cancel)\s+reminder\b/i.test(t)) return true;
+  if (/^(?:add\s+)?reminder\b/i.test(t)) return true;
+  if (/\bremind(?:\s+me)?\b/i.test(t)) return true;
+  if (/\bset\s+a?\s*reminder\b/i.test(t)) return true;
+  return false;
+}
+
+function cleanTitle(title) {
+  return String(title || '')
+    .replace(/^(to|that|me\s+to)\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Strip schedule words so title is just the thing to remember */
+function stripScheduleFromTitle(title) {
+  return cleanTitle(title)
+    .replace(
+      /\s+(?:on|at|by|for|every\s+day|everyday|daily|every\s+week|weekly|every\s+year|yearly|tomorrow|today)\b.*$/i,
+      ''
+    )
+    .replace(/\s+\d{1,2}([:.]\d{2})?\s*(am|pm)?\s*$/i, '')
+    .replace(/\s+\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?\s*$/i, '')
+    .trim();
+}
+
 function parseReminderCommand(text) {
-  const t = String(text || '').trim();
+  let t = normalizeReminderText(text).replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]+\s*/u, '');
 
   if (/^(my reminders|list reminders|show reminders|reminders)$/i.test(t)) {
     return { action: 'list' };
@@ -163,34 +253,176 @@ function parseReminderCommand(text) {
   const del = t.match(/^(?:delete|remove|cancel)\s+reminder\s+(.+)$/i);
   if (del) return { action: 'delete', query: del[1].trim() };
 
-  // remind me TITLE on/at/every DATE...
-  const add =
-    t.match(/^remind(?:\s+me)?\s+(.+?)\s+(?:on|at|by)\s+(.+)$/i) ||
-    t.match(/^remind(?:\s+me)?\s+(.+?)\s+(tomorrow(?:\s+at\s+.+)?)$/i) ||
-    t.match(/^remind(?:\s+me)?\s+(.+?)\s+(today(?:\s+at\s+.+)?)$/i) ||
-    t.match(/^remind(?:\s+me)?\s+(.+?)\s+(every\s+.+)$/i) ||
-    t.match(/^(?:add\s+)?reminder\s+(.+?)\s+(?:on|at|by)\s+(.+)$/i);
+  // Strip leading remind me / remind me to / set a reminder to
+  const stripped = t
+    .replace(/^(?:please\s+)?(?:set\s+a?\s*)?remind(?:er)?(?:\s+me)?(?:\s+to)?\s+/i, '')
+    .replace(/^add\s+reminder(?:\s+to)?\s+/i, '')
+    .trim();
 
-  if (add) {
-    return { action: 'add', title: add[1].trim(), whenText: add[2].trim() };
+  const body = stripped && stripped.length >= 2 ? stripped : t;
+
+  // TITLE + every day / everyday / daily + optional time
+  const daily = body.match(
+    /^(.+?)\s+(every\s+day|everyday|daily)(?:\s+(?:at|by|@)\s*(.+))?$/i
+  );
+  if (daily) {
+    const whenText = `every day ${daily[3] ? `at ${daily[3]}` : 'at 9am'}`.trim();
+    return { action: 'add', title: cleanTitle(daily[1]), whenText };
   }
 
-  // remind me TITLE every day at ...
-  const add2 = t.match(/^remind(?:\s+me)?\s+(.+)$/i);
-  if (add2 && /\b(tomorrow|today|every|daily|weekly|\d{1,2}[\/\-.]\d{1,2})/i.test(add2[1])) {
-    const body = add2[1].trim();
-    const split = body.match(/^(.+?)\s+((?:tomorrow|today|every\s+.+|\d{1,2}[\/\-.].+))$/i);
-    if (split) return { action: 'add', title: split[1].trim(), whenText: split[2].trim() };
+  // TITLE + every week
+  const weekly = body.match(/^(.+?)\s+(every\s+week|weekly)(?:\s+(?:at|by|@)\s*(.+))?$/i);
+  if (weekly) {
+    return {
+      action: 'add',
+      title: cleanTitle(weekly[1]),
+      whenText: `every week ${weekly[3] ? `at ${weekly[3]}` : 'at 9am'}`,
+    };
+  }
+
+  // TITLE tomorrow/today ... (must run BEFORE generic "at/by" or "at 5pm" steals it)
+  const near = body.match(/^(.+?)\s+(tomorrow|today)(?:\s+(?:at|by|@)\s*(.+))?$/i);
+  if (near) {
+    const whenText = near[3]
+      ? `${near[2]} at ${near[3]}`.trim()
+      : `${near[2]}${''}`.trim();
+    return {
+      action: 'add',
+      title: cleanTitle(near[1]),
+      whenText: whenText || near[2],
+    };
+  }
+
+  // TITLE on/at/by DATE (not bare times alone unless no better match)
+  const dated = body.match(/^(.+?)\s+(?:on|at|by|for)\s+(.+)$/i);
+  if (dated && !/^(every|daily|weekly|tomorrow|today)/i.test(dated[2])) {
+    const whenPart = dated[2].trim();
+    const titlePart = cleanTitle(dated[1]);
+    if (/^(?:\d{1,2}([:.]\d{2})?\s*(am|pm)?)$/i.test(whenPart)) {
+      return { action: 'add', title: titlePart, whenText: `every day at ${whenPart}` };
+    }
+    return { action: 'add', title: titlePart, whenText: whenPart };
+  }
+
+  // TITLE + DD/MM...
+  const slash = body.match(/^(.+?)\s+(\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?.*)$/i);
+  if (slash) {
+    return { action: 'add', title: cleanTitle(slash[1]), whenText: slash[2].trim() };
+  }
+
+  // Fallback: whole body after remind me — let AI / parseDateTime try
+  if (/\bremind/i.test(t) && body.length >= 3) {
+    return { action: 'add', title: cleanTitle(body), whenText: body, needsAi: true };
   }
 
   return null;
 }
 
-async function addReminder(phone, { title, whenText }) {
+/**
+ * Use OpenAI to understand free-form reminder language (Lagos timezone).
+ */
+async function interpretReminderWithAI(text) {
+  if (!config.openai?.apiKey) return null;
+
+  try {
+    const ai = require('../providers/openai');
+    const now = new Date();
+    const lagosNow = now.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' });
+
+    const response = await ai.chat({
+      model: config.openai.model,
+      temperature: 0,
+      max_tokens: 250,
+      messages: [
+        {
+          role: 'system',
+          content:
+            `You extract WhatsApp reminder intents for Nigeria (Africa/Lagos).\n` +
+            `Current Lagos time: ${lagosNow}\n` +
+            `Reply ONLY JSON:\n` +
+            `{"ok":true,"title":"short title","frequency":"once|daily|weekly|yearly","hour":0-23,"minute":0-59,"day":null|1-31,"month":null|1-12,"year":null|YYYY}\n` +
+            `or {"ok":false,"reason":"..."}\n` +
+            `Rules: title is the thing to remember (no date words). ` +
+            `everyday/daily → frequency daily. ` +
+            `If only a time is given with remind me, use daily. ` +
+            `hour/minute in 24h Lagos local.`,
+        },
+        { role: 'user', content: String(text).slice(0, 400) },
+      ],
+    });
+
+    const raw = (response.text || '').trim();
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    const parsed = JSON.parse(match[0]);
+    if (!parsed?.ok || !parsed.title) return null;
+
+    const frequency = ['once', 'daily', 'weekly', 'yearly'].includes(parsed.frequency)
+      ? parsed.frequency
+      : 'once';
+    const hour = Number(parsed.hour);
+    const minute = Number(parsed.minute);
+    const h = Number.isFinite(hour) ? hour : 9;
+    const m = Number.isFinite(minute) ? minute : 0;
+    const wall = lagosWallParts(now);
+
+    let date;
+    if (frequency === 'once' && parsed.day && parsed.month) {
+      const year = parsed.year || wall.year;
+      date = fromLagosLocal(year, Number(parsed.month) - 1, Number(parsed.day), h, m);
+      if (date.getTime() <= now.getTime() && !parsed.year) {
+        date = fromLagosLocal(year + 1, Number(parsed.month) - 1, Number(parsed.day), h, m);
+      }
+    } else if (frequency === 'yearly' && parsed.day && parsed.month) {
+      date = fromLagosLocal(wall.year, Number(parsed.month) - 1, Number(parsed.day), h, m);
+      if (date.getTime() <= now.getTime()) {
+        date = fromLagosLocal(wall.year + 1, Number(parsed.month) - 1, Number(parsed.day), h, m);
+      }
+    } else if (frequency === 'weekly') {
+      date = fromLagosLocal(wall.year, wall.month, wall.day, h, m);
+      date = new Date(date.getTime() + 7 * 24 * 60 * 60 * 1000);
+    } else {
+      // daily or default
+      date = fromLagosLocal(wall.year, wall.month, wall.day, h, m);
+      if (date.getTime() <= now.getTime()) {
+        date = new Date(date.getTime() + 24 * 60 * 60 * 1000);
+      }
+    }
+
+    return {
+      ok: true,
+      title: cleanTitle(parsed.title).slice(0, 80),
+      frequency: frequency === 'once' && !parsed.day ? 'daily' : frequency,
+      date,
+    };
+  } catch (err) {
+    logger.warn('AI reminder parse failed', { error: err.message });
+    return null;
+  }
+}
+
+async function addReminder(phone, { title, whenText, date, frequency }) {
   const norm = normalizePhone(phone);
-  const parsed = parseDateTime(whenText);
-  if (!parsed.ok) return { ok: false, message: parsed.message };
-  if (!title || title.length < 2) return { ok: false, message: 'Give your reminder a short title.' };
+  let resolvedDate = date || null;
+  let resolvedFreq = frequency || 'once';
+
+  if (!resolvedDate && whenText) {
+    const parsed = parseDateTime(whenText);
+    if (parsed.ok) {
+      resolvedDate = parsed.date;
+      resolvedFreq = parsed.frequency || 'once';
+    }
+  }
+
+  if (!resolvedDate) {
+    return { ok: false, message: parseDateTime('').message };
+  }
+
+  let clean = stripScheduleFromTitle(title);
+  if (!clean || clean.length < 2) clean = cleanTitle(title);
+  if (!clean || clean.length < 2) {
+    return { ok: false, message: 'Give your reminder a short title.' };
+  }
 
   const reminders = listLocal(norm);
   if (reminders.length >= MAX_REMINDERS) {
@@ -199,9 +431,9 @@ async function addReminder(phone, { title, whenText }) {
 
   const item = {
     id: `rem_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
-    title: title.slice(0, 80),
-    remindAt: parsed.date.toISOString(),
-    frequency: parsed.frequency || 'once',
+    title: String(clean).slice(0, 80),
+    remindAt: resolvedDate.toISOString(),
+    frequency: resolvedFreq,
     enabled: true,
     createdAt: new Date().toISOString(),
     lastSentAt: null,
@@ -266,28 +498,30 @@ async function deleteDbReminder(id) {
 function nextFire(item, from = new Date()) {
   const base = new Date(item.remindAt);
   if (item.frequency === 'once') return null;
-  const d = new Date(from);
+  const baseLagos = new Date(base.getTime() + LAGOS_OFFSET_MS);
+  const h = baseLagos.getUTCHours();
+  const mi = baseLagos.getUTCMinutes();
+  const wall = lagosWallParts(from);
+
   if (item.frequency === 'daily') {
-    d.setTime(from.getTime());
-    d.setHours(base.getHours(), base.getMinutes(), 0, 0);
-    if (d.getTime() <= from.getTime()) d.setDate(d.getDate() + 1);
+    let d = fromLagosLocal(wall.year, wall.month, wall.day, h, mi);
+    if (d.getTime() <= from.getTime()) d = new Date(d.getTime() + 24 * 60 * 60 * 1000);
     return d;
   }
   if (item.frequency === 'weekly') {
-    d.setTime(from.getTime() + 7 * 24 * 60 * 60 * 1000);
-    d.setHours(base.getHours(), base.getMinutes(), 0, 0);
+    let d = fromLagosLocal(wall.year, wall.month, wall.day, h, mi);
+    d = new Date(d.getTime() + 7 * 24 * 60 * 60 * 1000);
     return d;
   }
   if (item.frequency === 'yearly') {
-    return new Date(from.getFullYear() + 1, base.getMonth(), base.getDate(), base.getHours(), base.getMinutes());
+    const month = baseLagos.getUTCMonth();
+    const day = baseLagos.getUTCDate();
+    let d = fromLagosLocal(wall.year + 1, month, day, h, mi);
+    return d;
   }
   return null;
 }
 
-/**
- * Find due reminders from local metadata + optional DB.
- * Returns [{ phone, reminder }]
- */
 async function getDueReminders(now = new Date()) {
   const due = [];
 
@@ -324,7 +558,6 @@ async function getDueReminders(now = new Date()) {
     logger.warn('Reminder DB query failed', { message: err.message });
   }
 
-  // Fallback: scan in-memory users (local/dev)
   try {
     const { getAllUsers } = require('../userStore');
     if (typeof getAllUsers === 'function') {
@@ -389,6 +622,8 @@ async function markReminderSent(phone, reminder, now = new Date()) {
 module.exports = {
   parseReminderCommand,
   parseDateTime,
+  looksLikeReminder,
+  interpretReminderWithAI,
   addReminder,
   deleteReminder,
   listReminders,
@@ -397,4 +632,7 @@ module.exports = {
   getDueReminders,
   markReminderSent,
   nextFire,
+  cleanTitle,
+  stripScheduleFromTitle,
+  normalizeReminderText,
 };
