@@ -26,6 +26,7 @@
     "form-data",
     "nodemailer",
     "serverless-http",
+    "ws",
   ]
 
 [functions.server]
