@@ -18,6 +18,15 @@
 [functions]
   node_bundler = "esbuild"
   included_files = ["src/**", "flows/**"]
+  external_node_modules = [
+    "express",
+    "axios",
+    "dotenv",
+    "@supabase/supabase-js",
+    "form-data",
+    "nodemailer",
+    "serverless-http",
+  ]
 
 [functions.server]
   timeout = 26
