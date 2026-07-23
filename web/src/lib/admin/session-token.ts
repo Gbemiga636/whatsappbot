@@ -26,7 +26,9 @@ async function hmacHex(message: string) {
 
 export async function createAdminToken(email: string) {
   const exp = Date.now() + MAX_AGE * 1000;
-  const body = `${email.toLowerCase()}.${exp}`;
+  // Encode email so dots in addresses don't break token parsing
+  const emailPart = Buffer.from(email.toLowerCase(), "utf8").toString("base64url");
+  const body = `${emailPart}.${exp}`;
   const sig = await hmacHex(body);
   return `${body}.${sig}`;
 }
@@ -35,13 +37,20 @@ export async function readAdminToken(token: string | undefined | null) {
   if (!token) return null;
   const parts = token.split(".");
   if (parts.length !== 3) return null;
-  const [email, expStr, sig] = parts;
-  const body = `${email}.${expStr}`;
+  const [emailPart, expStr, sig] = parts;
+  const body = `${emailPart}.${expStr}`;
   const expected = await hmacHex(body);
   if (sig !== expected) return null;
   const exp = Number(expStr);
   if (!Number.isFinite(exp) || Date.now() > exp) return null;
-  if (email.toLowerCase() !== expectedEmail()) return null;
+
+  let email = "";
+  try {
+    email = Buffer.from(emailPart, "base64url").toString("utf8").toLowerCase();
+  } catch {
+    return null;
+  }
+  if (!email || email !== expectedEmail()) return null;
   return { email };
 }
 

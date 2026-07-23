@@ -33,7 +33,8 @@ export function AdminLoginForm() {
       const res = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        credentials: "same-origin",
+        body: JSON.stringify({ email: email.trim(), password }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) {
@@ -41,8 +42,8 @@ export function AdminLoginForm() {
         setLoading(false);
         return;
       }
-      // Full navigation avoids Netlify RSC client-transition bugs after auth cookie set
-      window.location.assign(safeNextPath());
+      // Hard navigation so the new Set-Cookie is sent on the next document request
+      window.location.href = safeNextPath();
     } catch {
       setError("Network error — try again");
       setLoading(false);
