@@ -14,7 +14,29 @@
   schedule = "*/15 * * * *"
   timeout = 26
 
+# Bot / API routes → Express (force, so static index.html does not steal them)
 [[redirects]]
-  from = "/*"
+  from = "/webhook/*"
   to = "/.netlify/functions/server"
   status = 200
+  force = true
+
+[[redirects]]
+  from = "/health"
+  to = "/.netlify/functions/server"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/auth/*"
+  to = "/.netlify/functions/server"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/pin/*"
+  to = "/.netlify/functions/server"
+  status = 200
+  force = true
+
+# Marketing site is served from /public (index.html). Do not catch-all to the bot.

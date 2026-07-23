@@ -32,17 +32,25 @@ function parseContactCommand(text) {
     return { action: 'help' };
   }
 
+  // Bare "Edit" / "edit contact" (list-row tip tap) → show how to edit
+  if (/^(?:edit|update)(?:\s+contact)?$/i.test(t)) {
+    return { action: 'edit_prompt' };
+  }
+
   const save = t.match(/^(?:save|add)\s+contact\s+(.+?)\s+(0\d{10}|234\d{10})\s*$/i);
   if (save) return { action: 'save', name: save[1].trim(), phone: save[2] };
 
-  const edit = t.match(/^(?:edit|update)\s+contact\s+(.+?)\s+(0\d{10}|234\d{10})\s*$/i);
+  // "edit contact Name 080…" or short "edit Name 080…" / "update teni 070…"
+  const edit = t.match(
+    /^(?:edit|update)(?:\s+contact)?\s+(.+?)\s+(0\d{10}|\+?234\d{10})\s*$/i
+  );
   if (edit) return { action: 'edit', name: edit[1].trim(), phone: edit[2] };
 
   const del = t.match(/^(?:delete|remove)\s+contact\s+(.+)$/i);
   if (del) return { action: 'delete', name: del[1].trim() };
 
   const delShort = t.match(/^(?:delete|remove)\s+([a-zA-Z][\w\s'-]{1,40})$/i);
-  if (delShort && !/^(contact|contacts)$/i.test(delShort[1])) {
+  if (delShort && !/^(contact|contacts|reminder|reminders)$/i.test(delShort[1])) {
     return { action: 'delete', name: delShort[1].trim() };
   }
 
@@ -60,7 +68,7 @@ async function listContactsMessage(phone) {
   return (
     `*📇 Your saved contacts (${contacts.length})*\n\n` +
     `${lines}\n\n` +
-    `_Edit: *edit contact Name 080…* · Delete: *delete contact Name*_`
+    `_Edit: *edit Name 080…* · Delete: *delete Name*_`
   );
 }
 
@@ -79,8 +87,13 @@ async function handleContactCommand(phone, text) {
   const cmd = parseContactCommand(text);
   if (!cmd) return false;
 
-  if (cmd.action === 'help') {
-    await whatsapp.sendText(phone, contactStore.contactsHelpText());
+  if (cmd.action === 'help' || cmd.action === 'edit_prompt') {
+    await whatsapp.sendText(
+      phone,
+      cmd.action === 'edit_prompt'
+        ? `✏️ To update a contact, send:\n*edit Name 08012345678*\n\nOr *delete Name* to remove one.\n\n${await listContactsMessage(phone)}`
+        : contactStore.contactsHelpText()
+    );
     return true;
   }
 

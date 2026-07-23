@@ -258,8 +258,32 @@ async function processGuestPurchaseWebhook(reference, paidAmount, { provider } =
   }
   const confirmedAmount = Number(verify.amount || paidAmount);
 
+  const pending = {
+    phone: normalizePhone(tx.metadata?.phone || tx.phone),
+    service: tx.metadata?.service || tx.service,
+    baseAmount: tx.metadata?.baseAmount,
+    summaryText: tx.metadata?.summaryText,
+    purchaseId: reference,
+    snapshot: tx.metadata?.snapshot,
+  };
+
   if (tx.status === 'completed') {
-    return { ok: true, alreadyProcessed: true, phone: tx.phone };
+    // Still return pending so callback/webhook can WhatsApp-notify if that failed earlier
+    return {
+      ok: true,
+      alreadyProcessed: true,
+      phone: pending.phone,
+      pending,
+      purchase: {
+        ok: true,
+        reference,
+        paymentMethod: paymentProvider,
+        message: tx.metadata?.summaryText || 'Order already fulfilled',
+        total: tx.metadata?.total || tx.amount,
+        base: tx.metadata?.baseAmount,
+        commission: tx.metadata?.commission,
+      },
+    };
   }
   if (tx.status === 'failed') {
     return { ok: false, message: 'Purchase already failed' };
@@ -270,15 +294,6 @@ async function processGuestPurchaseWebhook(reference, paidAmount, { provider } =
     logger.warn('Guest purchase underpaid', { reference, confirmedAmount, expected });
     return { ok: false, message: 'Amount mismatch' };
   }
-
-  const pending = {
-    phone: normalizePhone(tx.metadata?.phone || tx.phone),
-    service: tx.metadata?.service || tx.service,
-    baseAmount: tx.metadata?.baseAmount,
-    summaryText: tx.metadata?.summaryText,
-    purchaseId: reference,
-    snapshot: tx.metadata?.snapshot,
-  };
 
   const purchase = await fulfillGuestPurchase(pending);
   if (purchase.ok) purchase.paymentMethod = paymentProvider;

@@ -213,8 +213,8 @@ function contactsHelpText() {
     `*Or* share their contact card from WhatsApp (📎 → Contact).\n\n` +
     `*Manage anytime:*\n` +
     `• *my contacts* — view all\n` +
-    `• *edit contact Mama 08099998888* — update\n` +
-    `• *delete contact Mama* — remove\n\n` +
+    `• *edit Mama 08099998888* — update\n` +
+    `• *delete Mama* — remove\n\n` +
     `*Then order by name:*\n` +
     `MTN 500 airtime for Mama\n` +
     `buy data for John`

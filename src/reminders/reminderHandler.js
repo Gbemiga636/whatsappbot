@@ -47,6 +47,12 @@ async function handleReminderCommand(phone, text) {
   }
   if (!cmd) return false;
 
+  // Critical: "Buy airtime for Mama" matches a loose "TITLE for X" pattern — never
+  // treat that as a reminder unless the user actually said remind / reminder.
+  if (cmd.action === 'add' && !looksLike) {
+    return false;
+  }
+
   clearConflictingSession(phone);
 
   if (cmd.action === 'help') {

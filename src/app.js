@@ -81,6 +81,8 @@ app.get('/health', (_req, res) => {
       verifyTokenSet: !!config.whatsapp.verifyToken,
     },
     publicBaseUrl: config.publicBaseUrl || null,
+    whatsappLinkNumber: (process.env.ADMIN_WHATSAPP_NUMBER || process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '')
+      .replace(/\D/g, '') || null,
     features: config.features,
     commission: config.wallet.commissionPercent,
   });

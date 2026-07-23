@@ -620,7 +620,7 @@ class AirtimeService extends BaseService {
     await this.reply(
       ctx.phone,
       `*📇 Your saved contacts*\n\n${lines}\n\n` +
-        `_Edit: *edit contact Name 080…* · Delete: *delete contact Name*_\n\n` +
+        `_Edit: *edit Name 080…* · Delete: *delete Name*_\n\n` +
         `_Order: *MTN 500 airtime for Mama*_`
     );
     return this.showMenu(ctx);

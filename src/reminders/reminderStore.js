@@ -293,15 +293,21 @@ function parseReminderCommand(text) {
     };
   }
 
-  // TITLE on/at/by DATE (not bare times alone unless no better match)
-  const dated = body.match(/^(.+?)\s+(?:on|at|by|for)\s+(.+)$/i);
+  // TITLE on/at/by DATE — do NOT use "for" here (steals "buy airtime for Mama")
+  const dated = body.match(/^(.+?)\s+(?:on|at|by)\s+(.+)$/i);
   if (dated && !/^(every|daily|weekly|tomorrow|today)/i.test(dated[2])) {
     const whenPart = dated[2].trim();
     const titlePart = cleanTitle(dated[1]);
-    if (/^(?:\d{1,2}([:.]\d{2})?\s*(am|pm)?)$/i.test(whenPart)) {
+    // Skip VTU / bill purchase titles (not "Pay rent")
+    if (/\b(airtime|data|electricity|dstv|gotv|wallet)\b/i.test(titlePart)) {
+      /* fall through */
+    } else if (/^(?:buy|purchase|get|send|fund|top\s*up)\b/i.test(titlePart) && !/\brent\b/i.test(titlePart)) {
+      /* fall through — e.g. "buy for Mama" without remind cue handled by looksLike gate */
+    } else if (/^(?:\d{1,2}([:.]\d{2})?\s*(am|pm)?)$/i.test(whenPart)) {
       return { action: 'add', title: titlePart, whenText: `every day at ${whenPart}` };
+    } else {
+      return { action: 'add', title: titlePart, whenText: whenPart };
     }
-    return { action: 'add', title: titlePart, whenText: whenPart };
   }
 
   // TITLE + DD/MM...
