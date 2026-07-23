@@ -4,7 +4,7 @@ export const BRAND = {
   description:
     "Airtime, data, bills, wallet, reminders and more — from WhatsApp or the web. Pay with Paystack. Built for Nigeria.",
   supportEmail: "support@bygate.app",
-  website: process.env.NEXT_PUBLIC_SITE_URL || "https://bygate.app",
+  website: process.env.NEXT_PUBLIC_SITE_URL || "https://mysogibot.netlify.app",
   twitter: "https://twitter.com/bygateapp",
   instagram: "https://instagram.com/bygateapp",
 } as const;

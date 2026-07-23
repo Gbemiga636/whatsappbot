@@ -1,11 +1,23 @@
+# Bygate on Netlify — Next.js site (web/) + WhatsApp bot (Express function)
+
 [build]
-  command = "npm install"
+  command = "npm install && npm install --prefix web && npm run build --prefix web"
+  publish = "web/.next"
   functions = "netlify/functions"
-  publish = "public"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_TELEMETRY_DISABLED = "1"
+  # Public site URL for the marketing/dashboard app
+  NEXT_PUBLIC_SITE_URL = "https://mysogibot.netlify.app"
+
+# OpenNext adapter — runs the animated Next.js app (landing, dashboard, admin)
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
 
 [functions]
   node_bundler = "esbuild"
-  included_files = ["src/**", "flows/**", "public/**"]
+  included_files = ["src/**", "flows/**"]
 
 [functions.server]
   timeout = 26
@@ -14,7 +26,13 @@
   schedule = "*/15 * * * *"
   timeout = 26
 
-# Bot / API routes → Express (force, so static index.html does not steal them)
+# ── WhatsApp bot / payments (Express) — force so Next does not take these paths ──
+[[redirects]]
+  from = "/webhook"
+  to = "/.netlify/functions/server"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/webhook/*"
   to = "/.netlify/functions/server"
@@ -38,5 +56,3 @@
   to = "/.netlify/functions/server"
   status = 200
   force = true
-
-# Marketing site is served from /public (index.html). Do not catch-all to the bot.
