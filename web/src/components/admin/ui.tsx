@@ -1,4 +1,3 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -14,13 +13,13 @@ export function StatCard({
   tone?: "default" | "success" | "warning" | "danger";
 }) {
   return (
-    <Card className="hover:shadow-md">
-      <CardHeader className="pb-2">
-        <CardDescription>{label}</CardDescription>
-        <CardTitle className="text-2xl tabular-nums sm:text-3xl">{value}</CardTitle>
-      </CardHeader>
-      {hint && (
-        <CardContent>
+    <div className="rounded-3xl border border-white bg-white p-5 shadow-sm shadow-emerald-900/5">
+      <p className="text-xs font-bold uppercase tracking-wide text-gray-400">{label}</p>
+      <p className="mt-2 text-2xl font-extrabold tracking-tight text-gray-900 tabular-nums sm:text-3xl">
+        {value}
+      </p>
+      {hint ? (
+        <div className="mt-2">
           <Badge
             variant={
               tone === "success"
@@ -31,13 +30,13 @@ export function StatCard({
                     ? "outline"
                     : "default"
             }
-            className={cn(tone === "danger" && "border-red-200 text-red-700 bg-red-50")}
+            className={cn(tone === "danger" && "border-red-200 bg-red-50 text-red-700")}
           >
             {hint}
           </Badge>
-        </CardContent>
-      )}
-    </Card>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -52,29 +51,29 @@ export function DataTable({
 }) {
   if (!rows.length) {
     return (
-      <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-12 text-center text-sm text-gray-500">
+      <div className="rounded-2xl border border-dashed border-gray-200 bg-[#F3F6F4] px-4 py-12 text-center text-sm text-gray-500">
         {empty || "No rows yet"}
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-3xl border border-gray-100">
       <table className="w-full min-w-[640px] text-left text-sm">
-        <thead>
-          <tr className="border-b border-gray-100 text-xs uppercase tracking-wide text-gray-400">
+        <thead className="bg-[#F3F6F4] text-xs font-bold uppercase tracking-wide text-gray-500">
+          <tr>
             {columns.map((c) => (
-              <th key={c.key} className={cn("pb-3 font-medium", c.className)}>
+              <th key={c.key} className={cn("px-4 py-3", c.className)}>
                 {c.label}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-gray-50 bg-white">
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-gray-50 last:border-0">
+            <tr key={i} className="hover:bg-emerald-50/40">
               {columns.map((c) => (
-                <td key={c.key} className={cn("py-3.5 text-gray-700", c.className)}>
+                <td key={c.key} className={cn("px-4 py-3.5 text-gray-700", c.className)}>
                   {row[c.key]}
                 </td>
               ))}
@@ -91,5 +90,35 @@ export function LiveBadge({ live }: { live: boolean }) {
     <Badge variant={live ? "success" : "warning"}>
       {live ? "Live Supabase" : "Demo data — connect Supabase service role"}
     </Badge>
+  );
+}
+
+export function AdminPageHeader({
+  title,
+  description,
+  live,
+}: {
+  title: string;
+  description: string;
+  live?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <h1 className="text-2xl font-extrabold tracking-tight text-gray-900 sm:text-3xl">
+          {title}
+        </h1>
+        <p className="mt-1 text-sm text-gray-500">{description}</p>
+      </div>
+      {typeof live === "boolean" ? <LiveBadge live={live} /> : null}
+    </div>
+  );
+}
+
+export function AdminPanel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-[28px] border border-white bg-white p-5 shadow-sm shadow-emerald-900/5 sm:p-6">
+      {children}
+    </div>
   );
 }

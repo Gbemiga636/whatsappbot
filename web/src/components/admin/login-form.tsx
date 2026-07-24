@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Eye, EyeOff, Shield } from "lucide-react";
+import {
+  faEye,
+  faEyeSlash,
+  faShieldHalved,
+  faLock,
+} from "@fortawesome/free-solid-svg-icons";
+import { FaIcon } from "@/components/shared/fa-icon";
+import { Logo } from "@/components/shared/logo";
 
 function safeNextPath() {
   try {
@@ -42,7 +49,6 @@ export function AdminLoginForm() {
         setLoading(false);
         return;
       }
-      // Hard navigation so the new Set-Cookie is sent on the next document request
       window.location.href = safeNextPath();
     } catch {
       setError("Network error — try again");
@@ -51,34 +57,33 @@ export function AdminLoginForm() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-[#F4F5F7] px-4">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#071A14] px-4">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_50%_40%_at_50%_0%,rgba(109,40,217,0.12),transparent)]"
+        className="pointer-events-none absolute -left-20 top-0 h-72 w-72 rounded-full bg-emerald-500/20 blur-3xl"
       />
-      <div className="relative w-full max-w-md rounded-2xl border border-gray-200/80 bg-white p-8 shadow-xl shadow-violet-900/5">
-        <div className="mb-6 text-center">
-          <Link href="/" className="mb-4 inline-flex items-center gap-2.5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/bygate-logo.png"
-              alt="Bygate"
-              width={36}
-              height={36}
-              className="h-9 w-9 rounded-xl object-cover shadow-sm ring-1 ring-black/5"
-            />
-            <span className="text-[17px] font-semibold tracking-tight text-gray-900">Bygate</span>
-          </Link>
-          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-800">
-            <Shield className="h-5 w-5" />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-16 bottom-0 h-80 w-80 rounded-full bg-teal-400/15 blur-3xl"
+      />
+
+      <div className="relative w-full max-w-md overflow-hidden rounded-[28px] border border-white/10 bg-white shadow-2xl shadow-black/40">
+        <div className="bg-gradient-to-br from-[#0B1F17] via-[#0F3D2E] to-[#1A9B6C] px-8 py-7 text-white">
+          <Logo light />
+          <div className="mt-6 flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15">
+              <FaIcon icon={faShieldHalved} className="h-5 w-5" />
+            </span>
+            <div>
+              <h1 className="text-xl font-extrabold tracking-tight">Admin console</h1>
+              <p className="text-sm text-emerald-100/80">Wallets · payments · WhatsApp ops</p>
+            </div>
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Admin access</h1>
-          <p className="mt-1 text-sm text-gray-500">Operations console for Bygate WhatsApp + web</p>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form onSubmit={onSubmit} className="space-y-4 px-8 py-7">
           <div className="space-y-2">
-            <label htmlFor="admin-email" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="admin-email" className="block text-xs font-bold uppercase tracking-wide text-gray-400">
               Email
             </label>
             <input
@@ -89,11 +94,11 @@ export function AdminLoginForm() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="admin@bygate.app"
-              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none ring-violet-600/20 focus:border-violet-500 focus:ring-4"
+              className="w-full rounded-2xl border border-gray-200 bg-[#F3F6F4] px-4 py-3 text-sm outline-none ring-emerald-600/20 focus:border-emerald-500 focus:bg-white focus:ring-4"
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="admin-password" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="admin-password" className="block text-xs font-bold uppercase tracking-wide text-gray-400">
               Password
             </label>
             <div className="relative">
@@ -104,30 +109,36 @@ export function AdminLoginForm() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 pr-11 text-sm outline-none ring-violet-600/20 focus:border-violet-500 focus:ring-4"
+                className="w-full rounded-2xl border border-gray-200 bg-[#F3F6F4] px-4 py-3 pr-12 text-sm outline-none ring-emerald-600/20 focus:border-emerald-500 focus:bg-white focus:ring-4"
               />
               <button
                 type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
                 onClick={() => setShow((v) => !v)}
                 aria-label={show ? "Hide password" : "Show password"}
               >
-                {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                <FaIcon icon={show ? faEyeSlash : faEye} className="h-4 w-4" />
               </button>
             </div>
           </div>
           {error ? (
-            <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600" role="alert">
+            <p className="rounded-2xl border border-red-100 bg-red-50 px-3 py-2.5 text-sm text-red-600" role="alert">
               {error}
             </p>
           ) : null}
           <button
             type="submit"
             disabled={!canSubmit || loading}
-            className="inline-flex w-full items-center justify-center rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-600/25 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading ? "Signing in…" : "Sign in to admin"}
+            <FaIcon icon={faLock} className="h-3.5 w-3.5" />
+            {loading ? "Signing in…" : "Sign in"}
           </button>
+          <p className="text-center text-xs text-gray-400">
+            <Link href="/" className="font-semibold text-emerald-700 hover:underline">
+              Back to Bygate
+            </Link>
+          </p>
         </form>
       </div>
     </div>

@@ -1,9 +1,9 @@
 import { fetchSessions, fetchTransactions, fetchUsers } from "@/lib/admin/data";
 import { money } from "@/lib/admin/demo-data";
-import { LiveBadge } from "@/components/admin/ui";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { AdminPageHeader, AdminPanel } from "@/components/admin/ui";
 import { Badge } from "@/components/ui/badge";
 
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Activity · Admin" };
 
 export default async function AdminActivityPage() {
@@ -44,26 +44,19 @@ export default async function AdminActivityPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Activity feed</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Combined stream of transactions, WhatsApp sessions, and user updates.
-          </p>
-        </div>
-        <LiveBadge live={live} />
-      </div>
+      <AdminPageHeader
+        title="Activity feed"
+        description="Combined stream of transactions, WhatsApp sessions, and user updates."
+        live={live}
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Latest events</CardTitle>
-          <CardDescription>Web + WhatsApp in one timeline</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <AdminPanel>
+        <p className="mb-4 text-sm font-bold text-gray-900">Latest events</p>
+        <div className="space-y-3">
           {events.map((e, i) => (
             <div
               key={`${e.kind}-${e.at}-${i}`}
-              className="flex items-start gap-3 rounded-xl border border-gray-100 bg-[#FAFAFC] px-3 py-3"
+              className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-[#F3F6F4] px-4 py-3.5"
             >
               <Badge
                 variant={
@@ -77,20 +70,20 @@ export default async function AdminActivityPage() {
                 {e.kind}
               </Badge>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-gray-900">{e.title}</p>
+                <p className="text-sm font-semibold text-gray-900">{e.title}</p>
                 <p className="truncate text-xs text-gray-500">{e.detail}</p>
               </div>
               <div className="text-right text-xs text-gray-400">
                 <p>{new Date(e.at).toLocaleString("en-NG")}</p>
-                {e.provider && <p className="mt-0.5">{e.provider}</p>}
+                {e.provider ? <p className="mt-0.5">{e.provider}</p> : null}
               </div>
             </div>
           ))}
-          {!events.length && (
+          {!events.length ? (
             <p className="py-8 text-center text-sm text-gray-500">No activity yet</p>
-          )}
-        </CardContent>
-      </Card>
+          ) : null}
+        </div>
+      </AdminPanel>
     </div>
   );
 }

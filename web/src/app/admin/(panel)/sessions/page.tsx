@@ -1,8 +1,8 @@
 import { fetchSessions } from "@/lib/admin/data";
-import { DataTable, LiveBadge } from "@/components/admin/ui";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { AdminPageHeader, AdminPanel, DataTable } from "@/components/admin/ui";
 import { Badge } from "@/components/ui/badge";
 
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Live WhatsApp · Admin" };
 
 function ago(iso: string) {
@@ -21,49 +21,40 @@ export default async function AdminSessionsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Live WhatsApp</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            What each user is doing in the bot right now (session step + service).
-          </p>
-        </div>
-        <LiveBadge live={live} />
-      </div>
+      <AdminPageHeader
+        title="Live WhatsApp"
+        description="What each user is doing in the bot right now (session step + service)."
+        live={live}
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{rows.length} sessions</CardTitle>
-          <CardDescription>Most recently updated first</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <DataTable
-            columns={[
-              { key: "phone", label: "Phone" },
-              { key: "service", label: "Service" },
-              { key: "step", label: "Step" },
-              { key: "when", label: "Last activity" },
-            ]}
-            rows={rows.map((s) => ({
-              phone: <span className="font-medium text-gray-900">{s.phone}</span>,
-              service: s.activeService ? (
-                <Badge>{s.activeService}</Badge>
-              ) : (
-                <Badge variant="outline">idle / menu</Badge>
-              ),
-              step: <span className="font-mono text-xs">{s.step}</span>,
-              when: (
-                <span>
-                  {ago(s.updatedAt)}{" "}
-                  <span className="text-gray-400">
-                    · {new Date(s.updatedAt).toLocaleString("en-NG")}
-                  </span>
+      <AdminPanel>
+        <p className="mb-4 text-sm font-bold text-gray-900">{rows.length} sessions</p>
+        <DataTable
+          columns={[
+            { key: "phone", label: "Phone" },
+            { key: "service", label: "Service" },
+            { key: "step", label: "Step" },
+            { key: "when", label: "Last activity" },
+          ]}
+          rows={rows.map((s) => ({
+            phone: <span className="font-semibold text-gray-900">{s.phone}</span>,
+            service: s.activeService ? (
+              <Badge>{s.activeService}</Badge>
+            ) : (
+              <Badge variant="outline">idle / menu</Badge>
+            ),
+            step: <span className="font-mono text-xs">{s.step}</span>,
+            when: (
+              <span>
+                {ago(s.updatedAt)}{" "}
+                <span className="text-gray-400">
+                  · {new Date(s.updatedAt).toLocaleString("en-NG")}
                 </span>
-              ),
-            }))}
-          />
-        </CardContent>
-      </Card>
+              </span>
+            ),
+          }))}
+        />
+      </AdminPanel>
     </div>
   );
 }

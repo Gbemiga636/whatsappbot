@@ -165,6 +165,110 @@ export async function fetchUsers(limit = 100): Promise<{ rows: AdminUser[]; live
   }
 }
 
+/**
+ * Admin wallet edit — set absolute balance or adjust by delta.
+ * Writes ledger + transaction when live DB is available.
+ */
+export async function updateUserWallet(opts: {
+  phone: string;
+  mode: "set" | "adjust";
+  amount: number;
+  reason?: string;
+}): Promise<{ ok: boolean; message: string; balance?: number }> {
+  const db = getAdminSupabase();
+  if (!db) {
+    return { ok: false, message: "Database not configured (SUPABASE_SERVICE_ROLE_KEY)." };
+  }
+
+  const phone = String(opts.phone || "").replace(/\D/g, "");
+  if (!phone) return { ok: false, message: "Phone is required." };
+
+  const amount = Number(opts.amount);
+  if (!Number.isFinite(amount)) return { ok: false, message: "Invalid amount." };
+  if (opts.mode === "set" && amount < 0) return { ok: false, message: "Balance cannot be negative." };
+  if (opts.mode === "adjust" && amount === 0) {
+    return { ok: false, message: "Adjustment must be non-zero." };
+  }
+
+  const { data: row, error: readErr } = await db
+    .from("whatsapp_users")
+    .select("phone, wallet_balance, metadata")
+    .eq("phone", phone)
+    .maybeSingle();
+
+  if (readErr) return { ok: false, message: readErr.message };
+  if (!row) return { ok: false, message: "User not found." };
+
+  const current = Number(row.wallet_balance || 0);
+  const next =
+    opts.mode === "set" ? amount : Math.round((current + amount) * 100) / 100;
+
+  if (next < 0) return { ok: false, message: "Resulting balance would be negative." };
+
+  const delta = Math.round((next - current) * 100) / 100;
+  const reason = (opts.reason || "Admin balance update").slice(0, 200);
+  const reference = `ADM_${Date.now()}_${phone.slice(-4)}`;
+
+  const { error: updErr } = await db
+    .from("whatsapp_users")
+    .update({
+      wallet_balance: next,
+      updated_at: new Date().toISOString(),
+      metadata: {
+        ...((row.metadata as Record<string, unknown>) || {}),
+        last_admin_balance_edit: {
+          at: new Date().toISOString(),
+          from: current,
+          to: next,
+          reason,
+        },
+      },
+    })
+    .eq("phone", phone);
+
+  if (updErr) return { ok: false, message: updErr.message };
+
+  // Best-effort audit trail
+  try {
+    await db.from("wallet_ledger").insert({
+      phone,
+      amount: delta,
+      balance_after: next,
+      type: delta >= 0 ? "credit" : "debit",
+      reference,
+      service: "admin",
+      metadata: { reason, admin: true, mode: opts.mode },
+      created_at: new Date().toISOString(),
+    });
+  } catch {
+    /* ledger table may differ — ignore */
+  }
+
+  try {
+    await db.from("transactions").insert({
+      phone,
+      service: "admin",
+      type: "admin_balance",
+      amount: Math.abs(delta),
+      status: "completed",
+      reference,
+      provider: "admin",
+      metadata: {
+        reason,
+        mode: opts.mode,
+        from: current,
+        to: next,
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  } catch {
+    /* ignore */
+  }
+
+  return { ok: true, message: "Balance updated", balance: next };
+}
+
 export async function fetchTransactions(limit = 150): Promise<{
   rows: AdminTransaction[];
   live: boolean;
