@@ -197,6 +197,20 @@ async function handleIncomingMessage(from, message) {
     if (handled) return;
   }
 
+  // Text replies while choosing what to do with a shared contact card
+  if (
+    session?.step === 'contact_card_prompt' &&
+    session?.data?.sharedContact &&
+    incoming.text
+  ) {
+    const handled = await contactHandler.handleChoice(
+      phone,
+      incoming.text,
+      getSession(phone) || session
+    );
+    if (handled) return;
+  }
+
   if (incoming.text) {
     const cmdHandled = await contactHandler.handleContactCommand(phone, incoming.text);
     if (cmdHandled) return;

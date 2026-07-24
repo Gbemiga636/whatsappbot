@@ -601,23 +601,57 @@ class AirtimeService extends BaseService {
   }
 
   async showContactsMenu(ctx) {
+    const whatsapp = require('../../whatsapp');
+    const { setSession } = require('../../sessionStore');
     const contacts = await contactStore.listContacts(ctx.phone);
+    const help = contactStore.contactsHelpText();
+
     if (!contacts.length) {
-      await this.reply(ctx.phone, contactStore.contactsHelpText());
-      return this.showMenu(ctx);
+      await this.reply(
+        ctx.phone,
+        `${help}\n\n_Tip: share a contact card now, or type_\n\`save contact Mama 08012345678\``
+      );
+      await whatsapp.sendButtons(ctx.phone, 'Need a shortcut?', [
+        { id: 'menu_airtime', title: 'Buy airtime' },
+        { id: 'menu_data', title: 'Buy data' },
+        { id: 'svc_main_menu', title: 'Main menu' },
+      ]);
+      setSession(ctx.phone, {
+        step: 'contact_help',
+        activeService: 'contacts',
+        data: { ...(ctx.session?.data || {}) },
+      });
+      return;
     }
 
     const lines = contacts
       .slice(0, 20)
       .map((c) => contactStore.formatContactLine(c))
       .join('\n');
+    const extra =
+      contacts.length > 20 ? `\n_…and ${contacts.length - 20} more_\n` : '\n';
+
     await this.reply(
       ctx.phone,
-      `*📇 Your saved contacts*\n\n${lines}\n\n` +
-        `_Edit: *edit Name 080…* · Delete: *delete Name*_\n\n` +
-        `_Order: *MTN 500 airtime for Mama*_`
+      `*📇 Your saved contacts (${contacts.length})*\n\n` +
+        `${lines}${extra}\n` +
+        `*Order tip*\n` +
+        `*500 airtime for ${contacts[0].name}*\n\n` +
+        `*Add more*\n` +
+        `• Type \`save contact Name 080…\`\n` +
+        `• Or share a contact card → Save / Airtime / Data\n\n` +
+        `_Edit: *edit Name 080…* · Delete: *delete Name*_`
     );
-    return this.showMenu(ctx);
+    await whatsapp.sendButtons(ctx.phone, 'What next?', [
+      { id: 'menu_airtime', title: 'Buy airtime' },
+      { id: 'menu_data', title: 'Buy data' },
+      { id: 'svc_main_menu', title: 'Main menu' },
+    ]);
+    setSession(ctx.phone, {
+      step: 'contact_help',
+      activeService: 'contacts',
+      data: { ...(ctx.session?.data || {}) },
+    });
   }
 
   async trySaveContactFromText(ctx, text) {

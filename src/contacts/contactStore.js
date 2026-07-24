@@ -207,10 +207,19 @@ function formatContactLine(c) {
 
 function contactsHelpText() {
   return (
-    `📇 *Contacts*\n\n` +
-    `Save: \`save contact Mama 080…\`\n` +
-    `Or share a contact card.\n\n` +
-    `Then: *500 airtime for Mama*`
+    `📇 *How to save contacts*\n\n` +
+    `*1. Type it*\n` +
+    `\`save contact Mama 08012345678\`\n\n` +
+    `*2. Share a contact card*\n` +
+    `In WhatsApp: attach → Contact → pick someone → send here.\n` +
+    `Then tap *Save*, *Airtime*, or *Data*.\n\n` +
+    `*After saving*\n` +
+    `Say: *500 airtime for Mama*\n` +
+    `Or: *data for Mama*\n\n` +
+    `*Manage*\n` +
+    `• *contacts* — see your list\n` +
+    `• *edit Mama 080…* — change number\n` +
+    `• *delete Mama* — remove`
   );
 }
 

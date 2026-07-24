@@ -18,7 +18,7 @@ const MAIN_VTU_ROWS = [
   { id: 'menu_airtime', title: '💳 Airtime', description: 'Auto-detect network' },
   { id: 'menu_data', title: '📶 Data', description: 'Daily, weekly & monthly bundles' },
   { id: 'menu_bulk', title: '👥 Bulk airtime', description: 'Same airtime for many people' },
-  { id: 'menu_contacts', title: '📇 Saved contacts', description: 'save contact Name 080…' },
+  { id: 'menu_contacts', title: '📇 Saved contacts', description: 'Save · share card · reorder' },
   { id: 'menu_reminders', title: '🔔 Reminders', description: 'Events & WhatsApp alerts' },
   { id: 'menu_electric', title: '⚡ Electricity', description: 'All discos' },
   { id: 'menu_tv', title: '📺 TV subscription', description: 'DStv, GOtv, StarTimes' },

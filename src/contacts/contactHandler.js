@@ -37,7 +37,9 @@ function parseContactCommand(text) {
     return { action: 'edit_prompt' };
   }
 
-  const save = t.match(/^(?:save|add)\s+contact\s+(.+?)\s+(0\d{10}|234\d{10})\s*$/i);
+  const save = t.match(
+    /^(?:save|add)\s+contact\s+(.+?)\s+(\+?234\d{10}|0\d{10})\s*$/i
+  );
   if (save) return { action: 'save', name: save[1].trim(), phone: save[2] };
 
   // "edit contact Name 080…" or short "edit Name 080…" / "update teni 070…"
@@ -142,7 +144,10 @@ async function handleSharedContact(phone, contactsPayload, session) {
   const shared = contactStore.parseSharedContacts({ contacts: contactsPayload });
   const contact = shared[0];
   if (!contact) {
-    await whatsapp.sendText(phone, 'Could not read that contact. Try sharing again or type the number.');
+    await whatsapp.sendText(
+      phone,
+      'Could not read that contact card. Try again, or type:\n`save contact Name 080…`'
+    );
     return true;
   }
 
@@ -158,11 +163,15 @@ async function handleSharedContact(phone, contactsPayload, session) {
 
   await whatsapp.sendButtons(
     phone,
-    `*${contact.name}*\n📞 ${contact.phone}\n\nBuy airtime or data for this number?`,
+    `*${contact.name}*\n📞 ${contact.phone}\n\n` +
+      `What do you want to do?\n` +
+      `• *Save* — keep for later\n` +
+      `• *Airtime* — buy airtime (also saves)\n` +
+      `• *Data* — buy data (also saves)`,
     [
-      { id: 'contact_buy_airtime', title: '💳 Airtime' },
-      { id: 'contact_buy_data', title: '📶 Data' },
-      { id: 'contact_save', title: '📇 Save only' },
+      { id: 'contact_save', title: 'Save contact' },
+      { id: 'contact_buy_airtime', title: 'Buy airtime' },
+      { id: 'contact_buy_data', title: 'Buy data' },
     ]
   );
   return true;
@@ -196,27 +205,63 @@ async function handleChoice(phone, choice, session) {
   const contact = session?.data?.sharedContact;
   if (!contact) return false;
 
-  if (choice === 'contact_buy_airtime') {
-    await contactStore.saveContact(phone, contact);
+  const normalized = String(choice || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+
+  const isAirtime =
+    choice === 'contact_buy_airtime' ||
+    normalized === 'airtime' ||
+    normalized === 'buy_airtime' ||
+    normalized === '1';
+  const isData =
+    choice === 'contact_buy_data' ||
+    normalized === 'data' ||
+    normalized === 'buy_data' ||
+    normalized === '2';
+  const isSave =
+    choice === 'contact_save' ||
+    normalized === 'save' ||
+    normalized === 'save_contact' ||
+    normalized === 'save_only' ||
+    normalized === '3';
+
+  if (isAirtime) {
+    const saved = await contactStore.saveContact(phone, contact);
+    if (!saved.ok) {
+      await whatsapp.sendText(phone, `❌ Could not save contact: ${saved.message}`);
+    }
     await startAirtimeForSharedContact(phone, contact);
     return true;
   }
 
-  if (choice === 'contact_buy_data') {
-    await contactStore.saveContact(phone, contact);
+  if (isData) {
+    const saved = await contactStore.saveContact(phone, contact);
+    if (!saved.ok) {
+      await whatsapp.sendText(phone, `❌ Could not save contact: ${saved.message}`);
+    }
     await startDataForSharedContact(phone, contact);
     return true;
   }
 
-  if (choice === 'contact_save') {
+  if (isSave) {
     const result = await contactStore.saveContact(phone, contact);
     await whatsapp.sendText(
       phone,
       result.ok
-        ? `✅ Saved *${result.contact.name}* — ${result.contact.phone}\n\nSay *MTN 500 airtime for ${result.contact.name}* anytime.`
+        ? `✅ Saved *${result.contact.name}* — ${result.contact.phone}\n\n` +
+            `Next time just say:\n` +
+            `*500 airtime for ${result.contact.name}*\n` +
+            `or *data for ${result.contact.name}*\n\n` +
+            `_See all: type *contacts*_`
         : `❌ ${result.message}`
     );
-    setSession(phone, { step: 'super_menu', activeService: null, data: { authMode: getUser(phone)?.authMode } });
+    setSession(phone, {
+      step: 'super_menu',
+      activeService: null,
+      data: { authMode: getUser(phone)?.authMode },
+    });
     return true;
   }
 
