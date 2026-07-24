@@ -1,5 +1,11 @@
+import { faBell, faToggleOn, faClock } from "@fortawesome/free-solid-svg-icons";
 import { fetchReminders } from "@/lib/admin/data";
-import { AdminPageHeader, AdminPanel, DataTable } from "@/components/admin/ui";
+import {
+  AdminPageHeader,
+  AdminPanel,
+  DataTable,
+  MetricBox,
+} from "@/components/admin/ui";
 import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +14,11 @@ export const metadata = { title: "Reminders · Admin" };
 export default async function AdminRemindersPage() {
   const { rows, live } = await fetchReminders(300);
   const active = rows.filter((r) => r.enabled).length;
+  const off = rows.length - active;
+  const soon = rows.filter((r) => {
+    const t = new Date(r.remindAt).getTime() - Date.now();
+    return r.enabled && t > 0 && t < 24 * 3600 * 1000;
+  }).length;
 
   return (
     <div className="space-y-6">
@@ -16,6 +27,30 @@ export default async function AdminRemindersPage() {
         description="WhatsApp scheduled alerts across all users."
         live={live}
       />
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <MetricBox
+          label="Total reminders"
+          value={String(rows.length)}
+          hint="All schedules"
+          icon={faBell}
+          tone="rose"
+        />
+        <MetricBox
+          label="Enabled"
+          value={String(active)}
+          hint={`${off} turned off`}
+          icon={faToggleOn}
+          tone="emerald"
+        />
+        <MetricBox
+          label="Due in 24h"
+          value={String(soon)}
+          hint="Firing soon"
+          icon={faClock}
+          tone="amber"
+        />
+      </div>
 
       <AdminPanel>
         <p className="mb-4 text-sm font-bold text-gray-900">

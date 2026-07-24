@@ -1,5 +1,8 @@
 import { Badge } from "@/components/ui/badge";
+import { FaIcon } from "@/components/shared/fa-icon";
 import { cn } from "@/lib/utils";
+import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
+import Link from "next/link";
 
 export function StatCard({
   label,
@@ -37,6 +40,132 @@ export function StatCard({
         </div>
       ) : null}
     </div>
+  );
+}
+
+export function MetricBox({
+  label,
+  value,
+  hint,
+  icon,
+  tone = "violet",
+  href,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  icon?: IconDefinition;
+  tone?: "violet" | "sky" | "amber" | "rose" | "emerald" | "fuchsia" | "orange" | "slate";
+  href?: string;
+}) {
+  const tones: Record<string, string> = {
+    violet: "bg-violet-50 text-violet-700",
+    sky: "bg-sky-50 text-sky-700",
+    amber: "bg-amber-50 text-amber-700",
+    rose: "bg-rose-50 text-rose-700",
+    emerald: "bg-emerald-50 text-emerald-700",
+    fuchsia: "bg-fuchsia-50 text-fuchsia-700",
+    orange: "bg-orange-50 text-orange-700",
+    slate: "bg-slate-100 text-slate-700",
+  };
+
+  const body = (
+    <div className="group h-full rounded-3xl border border-white bg-white p-5 shadow-sm shadow-violet-900/5 transition hover:-translate-y-0.5 hover:shadow-md">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{label}</p>
+          <p className="mt-2 truncate text-2xl font-extrabold tracking-tight text-gray-900 tabular-nums">
+            {value}
+          </p>
+          {hint ? <p className="mt-1 text-xs text-gray-500">{hint}</p> : null}
+        </div>
+        {icon ? (
+          <span
+            className={cn(
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl",
+              tones[tone]
+            )}
+          >
+            <FaIcon icon={icon} className="h-4 w-4" />
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className="block h-full">
+        {body}
+      </Link>
+    );
+  }
+  return body;
+}
+
+export function SectionCard({
+  title,
+  description,
+  action,
+  children,
+  className,
+}: {
+  title: string;
+  description?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={cn(
+        "rounded-[28px] border border-white bg-white p-5 shadow-sm shadow-violet-900/5 sm:p-6",
+        className
+      )}
+    >
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-base font-bold text-gray-900 sm:text-lg">{title}</h2>
+          {description ? <p className="mt-0.5 text-sm text-gray-500">{description}</p> : null}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+export function QuickAction({
+  href,
+  label,
+  hint,
+  icon,
+  tone = "violet",
+}: {
+  href: string;
+  label: string;
+  hint: string;
+  icon: IconDefinition;
+  tone?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-[#F8F6FC] p-4 transition hover:border-violet-200 hover:bg-violet-50"
+    >
+      <span
+        className={cn(
+          "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl",
+          tone
+        )}
+      >
+        <FaIcon icon={icon} className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <p className="font-bold text-gray-900">{label}</p>
+        <p className="mt-0.5 text-xs text-gray-500">{hint}</p>
+      </div>
+    </Link>
   );
 }
 
@@ -97,10 +226,12 @@ export function AdminPageHeader({
   title,
   description,
   live,
+  actions,
 }: {
   title: string;
   description: string;
   live?: boolean;
+  actions?: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -110,7 +241,10 @@ export function AdminPageHeader({
         </h1>
         <p className="mt-1 text-sm text-gray-500">{description}</p>
       </div>
-      {typeof live === "boolean" ? <LiveBadge live={live} /> : null}
+      <div className="flex flex-wrap items-center gap-2">
+        {typeof live === "boolean" ? <LiveBadge live={live} /> : null}
+        {actions}
+      </div>
     </div>
   );
 }

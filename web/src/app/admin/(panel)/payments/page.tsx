@@ -1,6 +1,16 @@
+import {
+  faCreditCard,
+  faMoneyBillWave,
+  faLayerGroup,
+} from "@fortawesome/free-solid-svg-icons";
 import { fetchTransactions, fetchOverview } from "@/lib/admin/data";
 import { money } from "@/lib/admin/demo-data";
-import { AdminPageHeader, AdminPanel, DataTable, StatCard } from "@/components/admin/ui";
+import {
+  AdminPageHeader,
+  AdminPanel,
+  DataTable,
+  MetricBox,
+} from "@/components/admin/ui";
 import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +26,7 @@ export default async function AdminPaymentsPage() {
       r.type === "topup_gift" ||
       r.type === "guest_purchase"
   );
+  const combined = stats.paystackIn + stats.opayIn;
 
   return (
     <div className="space-y-6">
@@ -25,19 +36,56 @@ export default async function AdminPaymentsPage() {
         live={stats.source === "live"}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Paystack inflow" value={money(stats.paystackIn)} tone="success" />
-        <StatCard label="OPay inflow" value={money(stats.opayIn)} tone="success" />
-        <StatCard
-          label="Combined inflow"
-          value={money(stats.paystackIn + stats.opayIn)}
-          hint="Completed payments only"
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricBox
+          label="Paystack inflow"
+          value={money(stats.paystackIn)}
+          hint="Completed"
+          icon={faCreditCard}
+          tone="violet"
         />
-        <StatCard
+        <MetricBox
+          label="OPay inflow"
+          value={money(stats.opayIn)}
+          hint="Direct checkout"
+          icon={faCreditCard}
+          tone="fuchsia"
+        />
+        <MetricBox
+          label="Combined"
+          value={money(combined)}
+          hint="Both rails"
+          icon={faMoneyBillWave}
+          tone="emerald"
+        />
+        <MetricBox
           label="Payment rows"
           value={String(paymentRows.length)}
-          hint="Top-ups + guest checkouts"
+          hint="Top-ups + guest"
+          icon={faLayerGroup}
+          tone="sky"
         />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-[28px] bg-gradient-to-br from-[#1a0b2e] via-[#3b1d6e] to-[#7c3aed] p-6 text-white shadow-xl shadow-violet-900/20">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-200/80">
+            Paystack share
+          </p>
+          <p className="mt-3 text-3xl font-extrabold">
+            {combined > 0 ? Math.round((stats.paystackIn / combined) * 100) : 0}%
+          </p>
+          <p className="mt-2 text-sm text-violet-100/75">{money(stats.paystackIn)} of total inflow</p>
+        </div>
+        <div className="rounded-[28px] border border-white bg-white p-6 shadow-sm shadow-violet-900/5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-gray-400">
+            OPay share
+          </p>
+          <p className="mt-3 text-3xl font-extrabold text-gray-900">
+            {combined > 0 ? Math.round((stats.opayIn / combined) * 100) : 0}%
+          </p>
+          <p className="mt-2 text-sm text-gray-500">{money(stats.opayIn)} of total inflow</p>
+        </div>
       </div>
 
       <AdminPanel>

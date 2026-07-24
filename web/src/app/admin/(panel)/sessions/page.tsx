@@ -1,5 +1,11 @@
+import { faComments, faBolt, faClock } from "@fortawesome/free-solid-svg-icons";
 import { fetchSessions } from "@/lib/admin/data";
-import { AdminPageHeader, AdminPanel, DataTable } from "@/components/admin/ui";
+import {
+  AdminPageHeader,
+  AdminPanel,
+  DataTable,
+  MetricBox,
+} from "@/components/admin/ui";
 import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +24,10 @@ function ago(iso: string) {
 
 export default async function AdminSessionsPage() {
   const { rows, live } = await fetchSessions(150);
+  const active = rows.filter((s) => s.activeService).length;
+  const idle = rows.length - active;
+  const recent = rows.filter((s) => Date.now() - new Date(s.updatedAt).getTime() < 15 * 60000)
+    .length;
 
   return (
     <div className="space-y-6">
@@ -26,6 +36,30 @@ export default async function AdminSessionsPage() {
         description="What each user is doing in the bot right now (session step + service)."
         live={live}
       />
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <MetricBox
+          label="Sessions loaded"
+          value={String(rows.length)}
+          hint="Most recent first"
+          icon={faComments}
+          tone="amber"
+        />
+        <MetricBox
+          label="In a service"
+          value={String(active)}
+          hint={`${idle} on menu / idle`}
+          icon={faBolt}
+          tone="violet"
+        />
+        <MetricBox
+          label="Active < 15m"
+          value={String(recent)}
+          hint="Fresh conversations"
+          icon={faClock}
+          tone="emerald"
+        />
+      </div>
 
       <AdminPanel>
         <p className="mb-4 text-sm font-bold text-gray-900">{rows.length} sessions</p>

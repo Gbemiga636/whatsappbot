@@ -1,6 +1,17 @@
+import {
+  faReceipt,
+  faCircleCheck,
+  faClock,
+  faTriangleExclamation,
+} from "@fortawesome/free-solid-svg-icons";
 import { fetchTransactions } from "@/lib/admin/data";
 import { money } from "@/lib/admin/demo-data";
-import { AdminPageHeader, AdminPanel, DataTable } from "@/components/admin/ui";
+import {
+  AdminPageHeader,
+  AdminPanel,
+  DataTable,
+  MetricBox,
+} from "@/components/admin/ui";
 import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +22,7 @@ export default async function AdminTransactionsPage() {
   const completed = rows.filter((r) => r.status === "completed").length;
   const pending = rows.filter((r) => r.status === "pending").length;
   const failed = rows.filter((r) => r.status === "failed").length;
+  const volume = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -20,11 +32,35 @@ export default async function AdminTransactionsPage() {
         live={live}
       />
 
-      <div className="flex flex-wrap gap-2 text-sm text-gray-600">
-        <Badge variant="outline">{rows.length} loaded</Badge>
-        <Badge variant="success">{completed} completed</Badge>
-        <Badge variant="warning">{pending} pending</Badge>
-        <Badge className="border-red-200 bg-red-50 text-red-700">{failed} failed</Badge>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricBox
+          label="Loaded"
+          value={String(rows.length)}
+          hint={money(volume) + " volume"}
+          icon={faReceipt}
+          tone="violet"
+        />
+        <MetricBox
+          label="Completed"
+          value={String(completed)}
+          hint="Fulfilled"
+          icon={faCircleCheck}
+          tone="emerald"
+        />
+        <MetricBox
+          label="Pending"
+          value={String(pending)}
+          hint="Awaiting payment"
+          icon={faClock}
+          tone="orange"
+        />
+        <MetricBox
+          label="Failed"
+          value={String(failed)}
+          hint="Needs review"
+          icon={faTriangleExclamation}
+          tone="rose"
+        />
       </div>
 
       <AdminPanel>
