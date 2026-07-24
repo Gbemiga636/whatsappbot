@@ -13,7 +13,7 @@ export function StatCard({
   tone?: "default" | "success" | "warning" | "danger";
 }) {
   return (
-    <div className="rounded-3xl border border-white bg-white p-5 shadow-sm shadow-emerald-900/5">
+    <div className="rounded-3xl border border-white bg-white p-5 shadow-sm shadow-violet-900/5">
       <p className="text-xs font-bold uppercase tracking-wide text-gray-400">{label}</p>
       <p className="mt-2 text-2xl font-extrabold tracking-tight text-gray-900 tabular-nums sm:text-3xl">
         {value}
@@ -51,7 +51,7 @@ export function DataTable({
 }) {
   if (!rows.length) {
     return (
-      <div className="rounded-2xl border border-dashed border-gray-200 bg-[#F3F6F4] px-4 py-12 text-center text-sm text-gray-500">
+      <div className="rounded-2xl border border-dashed border-gray-200 bg-[#F5F3FA] px-4 py-12 text-center text-sm text-gray-500">
         {empty || "No rows yet"}
       </div>
     );
@@ -60,7 +60,7 @@ export function DataTable({
   return (
     <div className="overflow-x-auto rounded-3xl border border-gray-100">
       <table className="w-full min-w-[640px] text-left text-sm">
-        <thead className="bg-[#F3F6F4] text-xs font-bold uppercase tracking-wide text-gray-500">
+        <thead className="bg-[#F5F3FA] text-xs font-bold uppercase tracking-wide text-gray-500">
           <tr>
             {columns.map((c) => (
               <th key={c.key} className={cn("px-4 py-3", c.className)}>
@@ -71,7 +71,7 @@ export function DataTable({
         </thead>
         <tbody className="divide-y divide-gray-50 bg-white">
           {rows.map((row, i) => (
-            <tr key={i} className="hover:bg-emerald-50/40">
+            <tr key={i} className="hover:bg-violet-50/40">
               {columns.map((c) => (
                 <td key={c.key} className={cn("px-4 py-3.5 text-gray-700", c.className)}>
                   {row[c.key]}
@@ -117,7 +117,7 @@ export function AdminPageHeader({
 
 export function AdminPanel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-[28px] border border-white bg-white p-5 shadow-sm shadow-emerald-900/5 sm:p-6">
+    <div className="rounded-[28px] border border-white bg-white p-5 shadow-sm shadow-violet-900/5 sm:p-6">
       {children}
     </div>
   );

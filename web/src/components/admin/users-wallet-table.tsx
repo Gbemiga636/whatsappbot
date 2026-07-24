@@ -74,14 +74,14 @@ export function UsersWalletTable({ rows }: { rows: AdminUser[] }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search name, phone, email…"
-          className="w-full rounded-2xl border border-gray-200 bg-[#F3F6F4] px-4 py-2.5 text-sm outline-none ring-emerald-600/20 focus:border-emerald-500 focus:ring-4 sm:max-w-sm"
+          className="w-full rounded-2xl border border-gray-200 bg-[#F5F3FA] px-4 py-2.5 text-sm outline-none ring-violet-600/20 focus:border-violet-500 focus:ring-4 sm:max-w-sm"
         />
         <p className="text-sm text-gray-500">{filtered.length} users</p>
       </div>
 
       <div className="overflow-x-auto rounded-3xl border border-gray-100">
         <table className="min-w-full text-left text-sm">
-          <thead className="bg-[#F3F6F4] text-xs font-bold uppercase tracking-wide text-gray-500">
+          <thead className="bg-[#F5F3FA] text-xs font-bold uppercase tracking-wide text-gray-500">
             <tr>
               <th className="px-4 py-3">User</th>
               <th className="px-4 py-3">Phone</th>
@@ -95,7 +95,7 @@ export function UsersWalletTable({ rows }: { rows: AdminUser[] }) {
               const name =
                 [u.firstName, u.lastName].filter(Boolean).join(" ") || "—";
               return (
-                <tr key={u.id || u.phone} className="hover:bg-emerald-50/40">
+                <tr key={u.id || u.phone} className="hover:bg-violet-50/40">
                   <td className="px-4 py-3">
                     <p className="font-semibold text-gray-900">{name}</p>
                     <p className="text-xs text-gray-500">{u.email || "No email"}</p>
@@ -118,7 +118,7 @@ export function UsersWalletTable({ rows }: { rows: AdminUser[] }) {
                         setAmount(String(u.walletBalance || 0));
                         setReason("");
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-sm shadow-emerald-600/20 hover:bg-emerald-700"
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-3 py-2 text-xs font-bold text-white shadow-sm shadow-violet-600/20 hover:bg-violet-700"
                     >
                       <FaIcon icon={faPenToSquare} className="h-3.5 w-3.5" />
                       Edit
@@ -136,7 +136,7 @@ export function UsersWalletTable({ rows }: { rows: AdminUser[] }) {
           <div className="w-full max-w-md overflow-hidden rounded-[28px] bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
               <div className="flex items-center gap-2">
-                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-50 text-violet-700">
                   <FaIcon icon={faWallet} className="h-4 w-4" />
                 </span>
                 <div>
@@ -154,7 +154,7 @@ export function UsersWalletTable({ rows }: { rows: AdminUser[] }) {
             </div>
 
             <div className="space-y-4 px-5 py-5">
-              <div className="rounded-2xl bg-[#F3F6F4] p-4">
+              <div className="rounded-2xl bg-[#F5F3FA] p-4">
                 <p className="text-xs font-bold uppercase tracking-wide text-gray-400">
                   Current balance
                 </p>
@@ -172,7 +172,7 @@ export function UsersWalletTable({ rows }: { rows: AdminUser[] }) {
                   }}
                   className={`rounded-2xl px-3 py-2.5 text-sm font-bold ${
                     mode === "set"
-                      ? "bg-emerald-600 text-white"
+                      ? "bg-violet-600 text-white"
                       : "bg-gray-100 text-gray-700"
                   }`}
                 >
@@ -186,7 +186,7 @@ export function UsersWalletTable({ rows }: { rows: AdminUser[] }) {
                   }}
                   className={`rounded-2xl px-3 py-2.5 text-sm font-bold ${
                     mode === "adjust"
-                      ? "bg-emerald-600 text-white"
+                      ? "bg-violet-600 text-white"
                       : "bg-gray-100 text-gray-700"
                   }`}
                 >
@@ -202,7 +202,7 @@ export function UsersWalletTable({ rows }: { rows: AdminUser[] }) {
                   type="number"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-lg font-bold outline-none ring-emerald-600/20 focus:border-emerald-500 focus:ring-4"
+                  className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-lg font-bold outline-none ring-violet-600/20 focus:border-violet-500 focus:ring-4"
                   placeholder={mode === "adjust" ? "e.g. 500 or -200" : "e.g. 10000"}
                 />
               </div>
@@ -214,7 +214,7 @@ export function UsersWalletTable({ rows }: { rows: AdminUser[] }) {
                 <input
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none ring-emerald-600/20 focus:border-emerald-500 focus:ring-4"
+                  className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none ring-violet-600/20 focus:border-violet-500 focus:ring-4"
                   placeholder="Support credit, correction…"
                 />
               </div>
@@ -232,7 +232,7 @@ export function UsersWalletTable({ rows }: { rows: AdminUser[] }) {
                 type="button"
                 disabled={loading}
                 onClick={save}
-                className="flex-1 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/25 disabled:opacity-60"
+                className="flex-1 rounded-2xl bg-violet-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-violet-600/25 disabled:opacity-60"
               >
                 {loading ? "Saving…" : "Save balance"}
               </button>

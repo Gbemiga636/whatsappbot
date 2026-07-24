@@ -5,29 +5,29 @@ import { SignupForm } from "@/components/auth/signup-form";
 
 export const metadata = {
   title: "Sign up",
-  description: "Create a Bygate account or continue as guest.",
+  description: "Create a Bygate account with your WhatsApp number.",
 };
 
 export default function SignupPage() {
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#F3F6F4] px-4 py-12">
+    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-[#F5F3FA] px-4 py-12">
       <div
         aria-hidden
-        className="pointer-events-none absolute -left-24 top-0 h-72 w-72 rounded-full bg-emerald-400/20 blur-3xl"
+        className="pointer-events-none absolute -left-24 top-0 h-72 w-72 rounded-full bg-violet-400/25 blur-3xl"
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute -right-20 bottom-0 h-80 w-80 rounded-full bg-teal-300/20 blur-3xl"
+        className="pointer-events-none absolute -right-20 bottom-0 h-80 w-80 rounded-full bg-fuchsia-300/20 blur-3xl"
       />
       <div className="relative w-full max-w-md">
         <div className="mb-6 flex justify-center">
           <Logo />
         </div>
-        <div className="overflow-hidden rounded-[28px] border border-white bg-white shadow-xl shadow-emerald-900/10">
-          <div className="bg-gradient-to-br from-[#0B1F17] via-[#0F3D2E] to-[#1A9B6C] px-6 py-6 text-white">
+        <div className="overflow-hidden rounded-[28px] border border-white bg-white shadow-xl shadow-violet-900/10">
+          <div className="bg-gradient-to-br from-[#1a0b2e] via-[#3b1d6e] to-[#7c3aed] px-6 py-6 text-white">
             <h1 className="text-2xl font-extrabold tracking-tight">Get started</h1>
-            <p className="mt-1 text-sm text-emerald-100/80">
-              Create an account, continue as guest, or use WhatsApp
+            <p className="mt-1 text-sm text-violet-100/80">
+              Sign up with your WhatsApp number so everything syncs
             </p>
           </div>
           <div className="px-6 py-6">
@@ -37,7 +37,7 @@ export default function SignupPage() {
           </div>
         </div>
         <p className="mt-6 text-center text-sm text-gray-500">
-          <Link href="/" className="font-semibold text-emerald-700 hover:underline">
+          <Link href="/" className="font-semibold text-violet-700 hover:underline">
             Back to home
           </Link>
         </p>

@@ -50,12 +50,12 @@ export function AdminShell({
   }
 
   return (
-    <div className="min-h-screen bg-[#EEF2F0]">
+    <div className="min-h-screen bg-[#F3F0F8]">
       <div className="mx-auto flex min-h-screen max-w-[1440px]">
-        <aside className="hidden w-[272px] shrink-0 bg-[#071A14] text-white lg:flex lg:flex-col">
+        <aside className="hidden w-[272px] shrink-0 bg-[#1a0b2e] text-white lg:flex lg:flex-col">
           <div className="flex h-16 items-center gap-2 border-b border-white/10 px-5">
             <Logo light />
-            <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-300">
+            <span className="inline-flex items-center gap-1 rounded-lg bg-violet-500/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-violet-300">
               <FaIcon icon={faShieldHalved} className="h-3 w-3" />
               Admin
             </span>
@@ -73,7 +73,7 @@ export function AdminShell({
                   className={cn(
                     "flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold transition",
                     active
-                      ? "bg-emerald-500 text-white shadow-lg shadow-emerald-950/40"
+                      ? "bg-violet-500 text-white shadow-lg shadow-violet-950/40"
                       : "text-white/65 hover:bg-white/10 hover:text-white"
                   )}
                 >
@@ -84,7 +84,7 @@ export function AdminShell({
             })}
           </nav>
           <div className="border-t border-white/10 p-4">
-            <p className="truncate text-xs text-emerald-200/70">{email}</p>
+            <p className="truncate text-xs text-violet-200/70">{email}</p>
             <button
               type="button"
               onClick={logout}
@@ -97,7 +97,7 @@ export function AdminShell({
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-emerald-900/5 bg-white/90 px-4 backdrop-blur lg:px-6">
+          <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-violet-900/5 bg-white/90 px-4 backdrop-blur lg:px-6">
             <div className="flex items-center gap-2 lg:hidden">
               <Logo compact />
               <span className="text-sm font-bold text-gray-900">Admin</span>
@@ -124,7 +124,7 @@ export function AdminShell({
                   (item.href === "/admin"
                     ? pathname === "/admin"
                     : pathname.startsWith(item.href))
-                    ? "bg-emerald-50 text-emerald-800"
+                    ? "bg-violet-50 text-violet-800"
                     : "text-gray-600"
                 )}
               >

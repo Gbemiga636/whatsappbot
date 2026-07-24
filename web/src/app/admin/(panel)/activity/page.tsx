@@ -56,7 +56,7 @@ export default async function AdminActivityPage() {
           {events.map((e, i) => (
             <div
               key={`${e.kind}-${e.at}-${i}`}
-              className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-[#F3F6F4] px-4 py-3.5"
+              className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-[#F5F3FA] px-4 py-3.5"
             >
               <Badge
                 variant={

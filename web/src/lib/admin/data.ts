@@ -1,4 +1,5 @@
 import { getAdminSupabase, isAdminDbReady } from "./supabase";
+import { normalizePhone } from "@/lib/phone";
 import {
   demoOverview,
   demoReminders,
@@ -180,7 +181,7 @@ export async function updateUserWallet(opts: {
     return { ok: false, message: "Database not configured (SUPABASE_SERVICE_ROLE_KEY)." };
   }
 
-  const phone = String(opts.phone || "").replace(/\D/g, "");
+  const phone = normalizePhone(opts.phone);
   if (!phone) return { ok: false, message: "Phone is required." };
 
   const amount = Number(opts.amount);

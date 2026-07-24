@@ -19,28 +19,51 @@ export type UserProfile = {
   phone?: string;
   mode: AuthMode;
   walletBalance: number;
+  live?: boolean;
 };
 
 type AuthContextValue = {
   user: UserProfile | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<{ ok: boolean; message?: string }>;
+  login: (phone: string, password: string) => Promise<{ ok: boolean; message?: string }>;
   signup: (data: {
     firstName: string;
     lastName: string;
+    phone: string;
     email: string;
     password: string;
   }) => Promise<{ ok: boolean; message?: string }>;
-  continueAsGuest: (name?: string) => Promise<void>;
-  logout: () => void;
-  refreshWallet: () => void;
+  continueAsGuest: (name?: string, phone?: string) => Promise<void>;
+  logout: () => Promise<void>;
+  refreshWallet: () => Promise<void>;
 };
 
-const STORAGE_KEY = "bygate_web_auth_v1";
+const STORAGE_KEY = "bygate_web_auth_v2";
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function readStored(): UserProfile | null {
+function mapApiUser(u: {
+  phone: string;
+  email?: string | null;
+  firstName: string;
+  lastName?: string;
+  authMode: string;
+  walletBalance: number;
+  supabaseUserId?: string | null;
+}): UserProfile {
+  return {
+    id: u.supabaseUserId || u.phone,
+    email: u.email || undefined,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    phone: u.phone,
+    mode: u.authMode === "authenticated" ? "authenticated" : "guest",
+    walletBalance: Number(u.walletBalance || 0),
+    live: true,
+  };
+}
+
+function readGuest(): UserProfile | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -51,7 +74,7 @@ function readStored(): UserProfile | null {
   }
 }
 
-function writeStored(user: UserProfile | null) {
+function writeGuest(user: UserProfile | null) {
   if (typeof window === "undefined") return;
   if (!user) localStorage.removeItem(STORAGE_KEY);
   else localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
@@ -61,74 +84,125 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    setUser(readStored());
-    setLoading(false);
-  }, []);
-
-  const persist = useCallback((next: UserProfile | null) => {
-    setUser(next);
-    writeStored(next);
-  }, []);
-
-  const login = useCallback(async (email: string, password: string) => {
-    await new Promise((r) => setTimeout(r, 700));
-    if (!email || password.length < 6) {
-      return { ok: false, message: "Invalid email or password." };
+  const refreshWallet = useCallback(async () => {
+    try {
+      const res = await fetch("/api/me", { credentials: "same-origin" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && data.user) {
+          const mapped = mapApiUser(data.user);
+          setUser(mapped);
+          writeGuest(null);
+          return;
+        }
+      }
+    } catch {
+      /* ignore */
     }
-    const profile: UserProfile = {
-      id: `usr_${Date.now()}`,
-      email: email.trim().toLowerCase(),
-      firstName: email.split("@")[0] || "User",
-      mode: "authenticated",
-      walletBalance: 12500,
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/me", { credentials: "same-origin" });
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled && data.ok && data.user) {
+            setUser(mapApiUser(data.user));
+            writeGuest(null);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch {
+        /* fall through to guest cache */
+      }
+      if (!cancelled) {
+        setUser(readGuest());
+        setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
     };
-    persist(profile);
-    return { ok: true };
-  }, [persist]);
+  }, []);
+
+  const login = useCallback(async (phone: string, password: string) => {
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ phone, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        return { ok: false, message: data.message || "Login failed" };
+      }
+      setUser(mapApiUser(data.user));
+      writeGuest(null);
+      return { ok: true };
+    } catch {
+      return { ok: false, message: "Network error" };
+    }
+  }, []);
 
   const signup = useCallback(
-    async (data: { firstName: string; lastName: string; email: string; password: string }) => {
-      await new Promise((r) => setTimeout(r, 900));
-      if (data.password.length < 6) {
-        return { ok: false, message: "Password must be at least 6 characters." };
+    async (data: {
+      firstName: string;
+      lastName: string;
+      phone: string;
+      email: string;
+      password: string;
+    }) => {
+      try {
+        const res = await fetch("/api/auth/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(data),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json.ok) {
+          return { ok: false, message: json.message || "Signup failed" };
+        }
+        setUser(mapApiUser(json.user));
+        writeGuest(null);
+        return { ok: true };
+      } catch {
+        return { ok: false, message: "Network error" };
       }
-      const profile: UserProfile = {
-        id: `usr_${Date.now()}`,
-        email: data.email.trim().toLowerCase(),
-        firstName: data.firstName.trim(),
-        lastName: data.lastName.trim(),
-        mode: "authenticated",
-        walletBalance: 0,
-      };
-      persist(profile);
-      return { ok: true };
     },
-    [persist]
+    []
   );
 
-  const continueAsGuest = useCallback(
-    async (name?: string) => {
-      await new Promise((r) => setTimeout(r, 400));
-      persist({
-        id: `guest_${Date.now()}`,
-        firstName: name?.trim() || "Guest",
-        mode: "guest",
-        walletBalance: 0,
+  const continueAsGuest = useCallback(async (name?: string, phone?: string) => {
+    const profile: UserProfile = {
+      id: `guest_${Date.now()}`,
+      firstName: name?.trim() || "Guest",
+      phone: phone || undefined,
+      mode: "guest",
+      walletBalance: 0,
+      live: false,
+    };
+    writeGuest(profile);
+    setUser(profile);
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ action: "logout" }),
       });
-    },
-    [persist]
-  );
-
-  const logout = useCallback(() => persist(null), [persist]);
-
-  const refreshWallet = useCallback(() => {
-    setUser((prev) => {
-      if (!prev || prev.mode !== "authenticated") return prev;
-      const next = { ...prev, walletBalance: prev.walletBalance };
-      writeStored(next);
-      return next;
-    });
+    } catch {
+      /* ignore */
+    }
+    writeGuest(null);
+    setUser(null);
   }, []);
 
   const value = useMemo(

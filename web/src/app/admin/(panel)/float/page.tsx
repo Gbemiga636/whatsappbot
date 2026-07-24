@@ -48,9 +48,9 @@ export default async function AdminFloatPage() {
             That funds user wallets (or guest checkout) — fulfillment still spends ClubKonnect.
           </p>
           <p>
-            Add <code className="rounded bg-[#F3F6F4] px-1.5 py-0.5">CLUBKONNECT_USER_ID</code> and{" "}
-            <code className="rounded bg-[#F3F6F4] px-1.5 py-0.5">CLUBKONNECT_API_KEY</code> to{" "}
-            <code className="rounded bg-[#F3F6F4] px-1.5 py-0.5">web/.env.local</code> for a live
+            Add <code className="rounded bg-[#F5F3FA] px-1.5 py-0.5">CLUBKONNECT_USER_ID</code> and{" "}
+            <code className="rounded bg-[#F5F3FA] px-1.5 py-0.5">CLUBKONNECT_API_KEY</code> to{" "}
+            <code className="rounded bg-[#F5F3FA] px-1.5 py-0.5">web/.env.local</code> for a live
             balance here.
           </p>
         </div>

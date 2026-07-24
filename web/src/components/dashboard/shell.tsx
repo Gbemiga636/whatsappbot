@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
-  faChartPie,
+  faHouse,
+  faTableCells,
   faWallet,
   faClockRotateLeft,
-  faGear,
-  faRightFromBracket,
+  faUser,
   faComments,
 } from "@fortawesome/free-solid-svg-icons";
 import { Logo } from "@/components/shared/logo";
@@ -15,43 +15,45 @@ import { FaIcon } from "@/components/shared/fa-icon";
 import { useAuth } from "@/lib/auth-context";
 import { whatsappLink } from "@/lib/constants";
 import { cn, formatNaira } from "@/lib/utils";
+import { formatPhoneDisplay } from "@/lib/phone";
 
 const NAV = [
-  { href: "/dashboard", label: "Home", icon: faChartPie },
-  { href: "/dashboard/wallet", label: "Wallet", icon: faWallet },
-  { href: "/dashboard/activity", label: "History", icon: faClockRotateLeft },
-  { href: "/dashboard/settings", label: "Settings", icon: faGear },
+  { href: "/dashboard", label: "Home", icon: faHouse, exact: true },
+  { href: "/dashboard/services", label: "Services", icon: faTableCells, exact: false },
+  { href: "/dashboard/wallet", label: "Wallet", icon: faWallet, exact: false },
+  { href: "/dashboard/activity", label: "History", icon: faClockRotateLeft, exact: false },
+  { href: "/dashboard/settings", label: "Me", icon: faUser, exact: false },
 ];
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const { user, loading, logout } = useAuth();
+  const { user, loading } = useAuth();
   const pathname = usePathname();
-  const router = useRouter();
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F3F6F4]">
-        <div className="h-11 w-11 animate-spin rounded-full border-[3px] border-emerald-200 border-t-emerald-600" />
+      <div className="flex min-h-dvh items-center justify-center bg-[#F5F3FA]">
+        <div className="h-11 w-11 animate-spin rounded-full border-[3px] border-violet-200 border-t-violet-600" />
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#F3F6F4] px-4">
-        <p className="text-gray-600">Sign in to open your Bygate wallet.</p>
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-[#F5F3FA] px-4">
+        <Logo />
+        <p className="text-center text-gray-600">Sign in with your WhatsApp number to open your wallet.</p>
         <div className="flex gap-2">
           <Link
             href="/login"
-            className="rounded-2xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-600/25"
+            className="rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-600/25"
           >
             Log in
           </Link>
           <Link
-            href="/signup?mode=guest"
+            href="/signup"
             className="rounded-2xl border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800"
           >
-            Continue as guest
+            Sign up
           </Link>
         </div>
       </div>
@@ -59,99 +61,76 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#F3F6F4]">
-      <div className="mx-auto flex min-h-screen max-w-6xl">
-        <aside className="hidden w-[260px] shrink-0 bg-[#0B1F17] text-white md:flex md:flex-col">
-          <div className="flex h-16 items-center px-5">
-            <Logo light />
-          </div>
-          <nav className="flex-1 space-y-1 px-3 py-4" aria-label="Dashboard">
-            {NAV.map((item) => {
-              const active = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold transition",
-                    active
-                      ? "bg-emerald-500 text-white shadow-lg shadow-emerald-900/30"
-                      : "text-white/70 hover:bg-white/10 hover:text-white"
-                  )}
-                >
-                  <FaIcon icon={item.icon} className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-          <div className="border-t border-white/10 p-4">
-            <p className="truncate text-sm font-semibold">
+    <div className="min-h-dvh bg-[#F5F3FA]">
+      <header className="sticky top-0 z-30 border-b border-violet-900/5 bg-white/90 backdrop-blur-md">
+        <div className="mx-auto flex h-14 max-w-lg items-center justify-between px-4 sm:max-w-2xl">
+          <Logo compact />
+          <div className="min-w-0 text-right">
+            <p className="truncate text-sm font-bold text-gray-900">
               {user.firstName}
               {user.mode === "guest" ? " · Guest" : ""}
             </p>
-            <p className="mt-0.5 truncate text-xs text-emerald-200/80">
-              {user.mode === "authenticated"
-                ? formatNaira(user.walletBalance)
-                : "Pay at checkout"}
+            <p className="truncate text-[11px] text-violet-700">
+              {user.phone
+                ? formatPhoneDisplay(user.phone)
+                : user.mode === "authenticated"
+                  ? formatNaira(user.walletBalance)
+                  : "Add phone to sync"}
             </p>
-            <button
-              type="button"
-              className="mt-3 flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm text-white/70 hover:bg-white/10 hover:text-white"
-              onClick={() => {
-                logout();
-                router.push("/");
-              }}
-            >
-              <FaIcon icon={faRightFromBracket} className="h-4 w-4" />
-              Log out
-            </button>
           </div>
-        </aside>
+        </div>
+      </header>
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-emerald-900/5 bg-white/90 px-4 backdrop-blur-md sm:px-6">
-            <div className="md:hidden">
-              <Logo compact />
-            </div>
-            <p className="hidden text-sm font-medium text-gray-500 md:block">
-              Your money · airtime · bills
-            </p>
-            <a
-              href={whatsappLink("Hi Bygate — I'm on the web dashboard.")}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-2xl bg-[#25D366] px-3.5 py-2 text-sm font-semibold text-white shadow-md shadow-emerald-500/20"
-            >
-              <FaIcon icon={faComments} className="h-4 w-4" />
-              WhatsApp
-            </a>
-          </header>
+      <main className="mx-auto w-full max-w-lg px-4 pb-28 pt-5 sm:max-w-2xl sm:px-6">
+        {children}
+      </main>
 
-          <nav
-            className="flex gap-1 overflow-x-auto border-b border-gray-200 bg-white px-2 py-2 md:hidden"
-            aria-label="Mobile dashboard"
-          >
-            {NAV.map((item) => (
+      <a
+        href={whatsappLink(
+          user.phone
+            ? `Hi Bygate — I'm ${user.firstName}, number ${formatPhoneDisplay(user.phone)}`
+            : "Hi Bygate — I'm on the web dashboard."
+        )}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-[5.5rem] right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg shadow-emerald-600/30 sm:right-6"
+        aria-label="Open WhatsApp"
+      >
+        <FaIcon icon={faComments} className="h-5 w-5" />
+      </a>
+
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-violet-100 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md"
+        aria-label="Main"
+      >
+        <div className="mx-auto flex max-w-lg items-stretch justify-between px-1 sm:max-w-2xl">
+          {NAV.map((item) => {
+            const active = item.exact
+              ? pathname === item.href
+              : pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 text-xs font-semibold",
-                  pathname === item.href
-                    ? "bg-emerald-50 text-emerald-800"
-                    : "text-gray-600"
+                  "flex min-w-0 flex-1 flex-col items-center gap-1 px-1 py-2.5 text-[10px] font-semibold transition",
+                  active ? "text-violet-700" : "text-gray-400 hover:text-gray-700"
                 )}
               >
-                <FaIcon icon={item.icon} className="h-3.5 w-3.5" />
+                <span
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-2xl transition",
+                    active ? "bg-violet-100 text-violet-700" : "bg-transparent"
+                  )}
+                >
+                  <FaIcon icon={item.icon} className="h-4 w-4" />
+                </span>
                 {item.label}
               </Link>
-            ))}
-          </nav>
-
-          <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
+            );
+          })}
         </div>
-      </div>
+      </nav>
     </div>
   );
 }

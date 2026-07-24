@@ -36,6 +36,7 @@ export function SignupForm() {
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
@@ -47,9 +48,9 @@ export function SignupForm() {
 
   async function onGuest() {
     setLoading(true);
-    await continueAsGuest(firstName || "Guest");
+    await continueAsGuest(firstName || "Guest", phone || undefined);
     setLoading(false);
-    toast.success("You're in as guest — Paystack at checkout");
+    toast.success("You're in as guest — create an account with your number to sync WhatsApp");
     router.push("/dashboard");
   }
 
@@ -61,13 +62,13 @@ export function SignupForm() {
     }
     setError("");
     setLoading(true);
-    const res = await signup({ firstName, lastName, email, password });
+    const res = await signup({ firstName, lastName, phone, email, password });
     setLoading(false);
     if (!res.ok) {
       setError(res.message || "Signup failed");
       return;
     }
-    toast.success("Account created");
+    toast.success("Account created — synced to your WhatsApp number");
     router.push("/dashboard");
   }
 
@@ -75,8 +76,8 @@ export function SignupForm() {
     return (
       <div className="space-y-5">
         <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4 text-sm text-violet-900">
-          Guest mode lets you explore the dashboard and use WhatsApp with Paystack checkout — no
-          wallet balance until you sign up.
+          Guest mode explores the dashboard. For a synced wallet, sign up with the same number you
+          use on WhatsApp.
         </div>
         <div className="space-y-2">
           <Label htmlFor="guest-name">Display name (optional)</Label>
@@ -125,6 +126,24 @@ export function SignupForm() {
           />
         </div>
       </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="phone">WhatsApp number</Label>
+        <Input
+          id="phone"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          required
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="0803 000 0000"
+        />
+        <p className="text-xs text-gray-500">
+          Use the same number as WhatsApp so your wallet and history stay in sync.
+        </p>
+      </div>
+
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input

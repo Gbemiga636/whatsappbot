@@ -19,7 +19,7 @@ export function AdminStatCards({ stats }: { stats: OverviewStats }) {
       value: String(stats.usersTotal),
       hint: `${stats.usersAuth} accounts`,
       icon: faUsers,
-      tone: "bg-emerald-50 text-emerald-700",
+      tone: "bg-violet-50 text-violet-700",
     },
     {
       label: "Transactions",
@@ -40,7 +40,7 @@ export function AdminStatCards({ stats }: { stats: OverviewStats }) {
       value: money(stats.opayIn),
       hint: "Direct checkout",
       icon: faCreditCard,
-      tone: "bg-teal-50 text-teal-700",
+      tone: "bg-fuchsia-50 text-fuchsia-700",
     },
     {
       label: "Live sessions",
@@ -77,7 +77,7 @@ export function AdminStatCards({ stats }: { stats: OverviewStats }) {
       {cards.map((c) => (
         <div
           key={c.label}
-          className="rounded-3xl border border-white bg-white p-5 shadow-sm shadow-emerald-900/5"
+          className="rounded-3xl border border-white bg-white p-5 shadow-sm shadow-violet-900/5"
         >
           <div className="flex items-start justify-between gap-3">
             <div>

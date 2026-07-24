@@ -14,7 +14,7 @@ import { WhatsAppCTA } from "@/components/shared/whatsapp-cta";
 export function LoginForm() {
   const { login } = useAuth();
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -24,29 +24,31 @@ export function LoginForm() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const res = await login(email, password);
+    const res = await login(phone, password);
     setLoading(false);
     if (!res.ok) {
       setError(res.message || "Login failed");
       return;
     }
-    toast.success("Welcome back");
+    toast.success("Welcome back — wallet synced");
     router.push("/dashboard");
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-5" noValidate>
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="phone">WhatsApp number</Label>
         <Input
-          id="email"
-          type="email"
-          autoComplete="email"
+          id="phone"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
           required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@email.com"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="0803 000 0000"
         />
+        <p className="text-xs text-gray-500">Same number you use on WhatsApp.</p>
       </div>
       <div className="space-y-2">
         <Label htmlFor="password">Password</Label>
@@ -84,7 +86,7 @@ export function LoginForm() {
       </Button>
 
       <div className="relative py-2 text-center text-xs text-gray-400">
-        <span className="bg-white px-2 relative z-10">or</span>
+        <span className="relative z-10 bg-white px-2">or</span>
         <span className="absolute inset-x-0 top-1/2 h-px bg-gray-100" />
       </div>
 
